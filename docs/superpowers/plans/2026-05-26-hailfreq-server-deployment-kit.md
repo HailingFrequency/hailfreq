@@ -251,7 +251,7 @@ name: hailfreq
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/postgres:16-alpine
     container_name: hailfreq-postgres
     restart: unless-stopped
     environment:
@@ -292,8 +292,9 @@ docker compose exec postgres pg_isready -U synapse -d synapse
 - [ ] **Step 4: Confirm Synapse DB was created with correct collation**
 
 ```bash
-docker compose exec postgres psql -U synapse -d synapse -c "SHOW LC_COLLATE;"
-# Expected: lc_collate column = "C"
+docker compose exec postgres psql -U synapse -d synapse -c \
+  "SELECT datcollate FROM pg_database WHERE datname='synapse';"
+# Expected: datcollate column = "C"
 ```
 
 - [ ] **Step 5: Tear down**
@@ -629,9 +630,9 @@ git commit -m "server: CitizenID OIDC provider config snippet and setup docs"
 
 **Files:**
 - Create: `server/Caddyfile.template`
-- Create: `server/caddy/well-known/matrix-client.json`
-- Create: `server/caddy/well-known/matrix-server.json`
 - Modify: `server/compose.yml` (add caddy service)
+
+Note: the .well-known/matrix/* endpoints are served inline from the Caddyfile via `respond` directives — no separate JSON files needed.
 
 - [ ] **Step 1: Write `server/Caddyfile.template`**
 
@@ -756,7 +757,7 @@ rtc:
   port_range_start: 50000
   port_range_end: 50100
   use_external_ip: true
-  external_ip: "${HAILFREQ_PUBLIC_IP}"
+  node_ip: "${HAILFREQ_PUBLIC_IP}"
 
 keys:
   ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
@@ -767,7 +768,6 @@ turn:
   tls_port: 5349
   udp_port: 3478
   external_tls: true
-  loadBalancerType: "none"
 
 logging:
   level: info
@@ -1248,11 +1248,13 @@ chmod +x server/scripts/healthcheck.sh
 - [ ] **Step 2: Write `server/tests/requirements.txt`**
 
 ```
-matrix-nio[e2e]==0.24.0
+matrix-nio==0.24.0
 pytest==8.3.3
 pytest-asyncio==0.24.0
 requests==2.32.3
 ```
+
+Note: `matrix-nio[e2e]` (with the e2e extra) requires building python-olm against system libolm-devel, which is fragile across distros and Python versions. The tests in this plan don't exercise actual Megolm encryption — they verify that encrypted rooms can be created and joined via the server. The non-e2e nio package is sufficient.
 
 - [ ] **Step 3: Write `server/tests/conftest.py`**
 

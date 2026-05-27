@@ -1,0 +1,104 @@
+name: hailfreq
+
+services:
+  postgres:
+    image: docker.io/postgres:16-alpine
+    container_name: hailfreq-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}
+      POSTGRES_DB: synapse_init
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./synapse/init-db.sh:/docker-entrypoint-initdb.d/10-init-synapse.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - hailfreq
+
+  synapse:
+    image: docker.io/matrixdotorg/synapse:v1.122.0
+    container_name: hailfreq-synapse
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    volumes:
+      - synapse_data:/data
+      - ./synapse/homeserver.yaml:/data/homeserver.yaml:ro
+      - ./synapse/log.config:/data/log.config:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fSs", "http://localhost:8008/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - hailfreq
+
+  caddy:
+    image: docker.io/caddy:2-alpine
+    container_name: hailfreq-caddy
+    restart: unless-stopped
+    depends_on:
+      synapse:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HAILFREQ_DOMAIN: ${HAILFREQ_DOMAIN:?HAILFREQ_DOMAIN not set}
+      HAILFREQ_ADMIN_EMAIL: ${HAILFREQ_ADMIN_EMAIL:?HAILFREQ_ADMIN_EMAIL not set}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - hailfreq
+
+  livekit:
+    image: docker.io/livekit/livekit-server:v1.7
+    container_name: hailfreq-livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    network_mode: host  # required for ICE/UDP NAT traversal — see docs/deployment.md
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  coturn:
+    image: docker.io/coturn/coturn:4.6
+    container_name: hailfreq-coturn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    healthcheck:
+      test: ["CMD-SHELL", "pidof turnserver"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  hailfreq:
+    name: hailfreq
+
+volumes:
+  postgres_data:
+  synapse_data:
+  caddy_data:
+  caddy_config:

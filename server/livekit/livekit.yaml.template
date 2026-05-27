@@ -1,0 +1,40 @@
+# REQUIRED FIREWALL on the host VPS:
+#   tcp/443       — HTTPS (Caddy)
+#   tcp/80        — HTTP (Caddy, Let's Encrypt challenges)
+#   tcp/7881      — LiveKit TCP fallback for media
+#   udp/3478      — TURN (coturn standalone)
+#   tcp/3478      — TURN (coturn standalone)
+#   udp/5349      — TURN over TLS (coturn standalone)
+#   tcp/5349      — TURN over TLS (coturn standalone)
+#   udp/50000-50100 — LiveKit media ports
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: true
+  node_ip: "${HAILFREQ_PUBLIC_IP}"
+
+keys:
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+
+turn:
+  enabled: false
+
+logging:
+  level: info
+  sample: false
+
+redis: {}
+
+# E2EE — actual key management is client-side; this opts in to the SFrame routing path
+room:
+  enable_remote_unmute: false
+  auto_create: true
+
+webhook:
+  api_key: ${LIVEKIT_API_KEY}
+  urls: []

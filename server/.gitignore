@@ -1,0 +1,17 @@
+.env
+secrets/
+data/
+synapse/homeserver.yaml
+Caddyfile
+livekit/livekit.yaml
+coturn/turnserver.conf
+caddy_data/
+caddy_config/
+postgres_data/
+synapse_data/
+livekit_data/
+*.log
+.pytest_cache/
+__pycache__/
+*.pyc
+.venv/
