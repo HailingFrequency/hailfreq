@@ -630,9 +630,9 @@ git commit -m "server: CitizenID OIDC provider config snippet and setup docs"
 
 **Files:**
 - Create: `server/Caddyfile.template`
-- Create: `server/caddy/well-known/matrix-client.json`
-- Create: `server/caddy/well-known/matrix-server.json`
 - Modify: `server/compose.yml` (add caddy service)
+
+Note: the .well-known/matrix/* endpoints are served inline from the Caddyfile via `respond` directives — no separate JSON files needed.
 
 - [ ] **Step 1: Write `server/Caddyfile.template`**
 
