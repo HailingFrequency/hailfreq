@@ -2,8 +2,10 @@
 #   tcp/443       — HTTPS (Caddy)
 #   tcp/80        — HTTP (Caddy, Let's Encrypt challenges)
 #   tcp/7881      — LiveKit TCP fallback for media
-#   udp/3478      — TURN (coturn / LiveKit embedded)
-#   udp/5349      — TURN over TLS
+#   udp/3478      — TURN (coturn standalone)
+#   tcp/3478      — TURN (coturn standalone)
+#   udp/5349      — TURN over TLS (coturn standalone)
+#   tcp/5349      — TURN over TLS (coturn standalone)
 #   udp/50000-50100 — LiveKit media ports
 port: 7880
 bind_addresses:
@@ -20,11 +22,7 @@ keys:
   ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
 
 turn:
-  enabled: true
-  domain: "${HAILFREQ_DOMAIN}"
-  tls_port: 5349
-  udp_port: 3478
-  external_tls: true
+  enabled: false
 
 logging:
   level: info
