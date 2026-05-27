@@ -1,7 +1,6 @@
 """Shared pytest fixtures for Hailfreq integration tests."""
 import os
 import secrets
-import subprocess
 import time
 
 import pytest
