@@ -1,6 +1,10 @@
 .env
 secrets/
 data/
+synapse/homeserver.yaml
+Caddyfile
+livekit/livekit.yaml
+coturn/turnserver.conf
 caddy_data/
 caddy_config/
 postgres_data/
