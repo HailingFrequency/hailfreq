@@ -40,6 +40,26 @@ services:
     networks:
       - hailfreq
 
+  caddy:
+    image: docker.io/caddy:2-alpine
+    container_name: hailfreq-caddy
+    restart: unless-stopped
+    depends_on:
+      synapse:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HAILFREQ_DOMAIN: ${HAILFREQ_DOMAIN:?HAILFREQ_DOMAIN not set}
+      HAILFREQ_ADMIN_EMAIL: ${HAILFREQ_ADMIN_EMAIL:?HAILFREQ_ADMIN_EMAIL not set}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - hailfreq
+
 networks:
   hailfreq:
     name: hailfreq
@@ -47,3 +67,5 @@ networks:
 volumes:
   postgres_data:
   synapse_data:
+  caddy_data:
+  caddy_config:

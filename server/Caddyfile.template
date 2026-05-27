@@ -1,0 +1,41 @@
+{
+  email $HAILFREQ_ADMIN_EMAIL
+}
+
+$HAILFREQ_DOMAIN {
+  # Matrix client/federation API + Synapse admin
+  handle /_matrix/* {
+    reverse_proxy synapse:8008
+  }
+  handle /_synapse/* {
+    reverse_proxy synapse:8008
+  }
+
+  # LiveKit signaling (WebSocket); media uses UDP direct to host
+  handle /livekit/* {
+    uri strip_prefix /livekit
+    reverse_proxy livekit:7880
+  }
+
+  # .well-known files for Matrix client + server auto-discovery
+  handle /.well-known/matrix/client {
+    header Content-Type application/json
+    header Access-Control-Allow-Origin *
+    respond `{"m.homeserver":{"base_url":"https://$HAILFREQ_DOMAIN"}}`
+  }
+  handle /.well-known/matrix/server {
+    header Content-Type application/json
+    respond `{"m.server":"$HAILFREQ_DOMAIN:443"}`
+  }
+
+  # Fallback — return a friendly landing
+  handle {
+    respond "Hailfreq server. Use a Matrix client to connect." 200
+  }
+
+  encode gzip
+  log {
+    output stdout
+    format console
+  }
+}
