@@ -14,8 +14,11 @@ if [[ -n "$DOMAIN" && -n "$EMAIL" ]]; then
   if [[ ! -f .env ]]; then
     cp .env.example .env
   fi
-  sed -i.bak "s|^HAILFREQ_DOMAIN=.*|HAILFREQ_DOMAIN=${DOMAIN}|" .env
-  sed -i.bak "s|^HAILFREQ_ADMIN_EMAIL=.*|HAILFREQ_ADMIN_EMAIL=${EMAIL}|" .env
+  # Escape sed-replacement metacharacters in user-provided values
+  escaped_domain=$(printf '%s' "$DOMAIN" | sed -e 's/[&/\\]/\\&/g')
+  escaped_email=$(printf '%s' "$EMAIL" | sed -e 's/[&/\\]/\\&/g')
+  sed -i.bak "s|^HAILFREQ_DOMAIN=.*|HAILFREQ_DOMAIN=${escaped_domain}|" .env
+  sed -i.bak "s|^HAILFREQ_ADMIN_EMAIL=.*|HAILFREQ_ADMIN_EMAIL=${escaped_email}|" .env
   rm -f .env.bak
 fi
 
