@@ -1,0 +1,28 @@
+name: hailfreq
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hailfreq-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}
+      POSTGRES_DB: synapse_init
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./synapse/init-db.sh:/docker-entrypoint-initdb.d/10-init-synapse.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - hailfreq
+
+networks:
+  hailfreq:
+    name: hailfreq
+
+volumes:
+  postgres_data:
