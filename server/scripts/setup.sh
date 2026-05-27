@@ -44,6 +44,14 @@ for var in HAILFREQ_DOMAIN HAILFREQ_ADMIN_EMAIL HAILFREQ_PUBLIC_IP POSTGRES_PASS
   fi
 done
 
+# Catch the documentation placeholder — operator forgot to set their real IP
+if [[ "${HAILFREQ_PUBLIC_IP}" == "203.0.113.10" ]]; then
+  echo "Error: HAILFREQ_PUBLIC_IP is still the example value (203.0.113.10)."
+  echo "Edit .env and set HAILFREQ_PUBLIC_IP to your VPS's public IPv4 address."
+  echo "(Run: curl -s ifconfig.me — to find it.)"
+  exit 1
+fi
+
 # Compute OIDC providers block — empty if CitizenID not configured
 if [[ -n "${CITIZENID_CLIENT_ID:-}" && -n "${CITIZENID_CLIENT_SECRET:-}" ]]; then
   echo "→ CitizenID OIDC: enabled"
