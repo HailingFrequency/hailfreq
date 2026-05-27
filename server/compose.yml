@@ -20,9 +20,30 @@ services:
     networks:
       - hailfreq
 
+  synapse:
+    image: docker.io/matrixdotorg/synapse:v1.122.0
+    container_name: hailfreq-synapse
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    volumes:
+      - synapse_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fSs", "http://localhost:8008/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - hailfreq
+
 networks:
   hailfreq:
     name: hailfreq
 
 volumes:
   postgres_data:
+  synapse_data:
