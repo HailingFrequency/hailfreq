@@ -1248,11 +1248,13 @@ chmod +x server/scripts/healthcheck.sh
 - [ ] **Step 2: Write `server/tests/requirements.txt`**
 
 ```
-matrix-nio[e2e]==0.24.0
+matrix-nio==0.24.0
 pytest==8.3.3
 pytest-asyncio==0.24.0
 requests==2.32.3
 ```
+
+Note: `matrix-nio[e2e]` (with the e2e extra) requires building python-olm against system libolm-devel, which is fragile across distros and Python versions. The tests in this plan don't exercise actual Megolm encryption — they verify that encrypted rooms can be created and joined via the server. The non-e2e nio package is sufficient.
 
 - [ ] **Step 3: Write `server/tests/conftest.py`**
 
