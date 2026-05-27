@@ -14,7 +14,7 @@ $HAILFREQ_DOMAIN {
   # LiveKit signaling (WebSocket); media uses UDP direct to host
   handle /livekit/* {
     uri strip_prefix /livekit
-    reverse_proxy livekit:7880
+    reverse_proxy host.docker.internal:7880
   }
 
   # .well-known files for Matrix client + server auto-discovery

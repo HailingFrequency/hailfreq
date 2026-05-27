@@ -57,8 +57,25 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - hailfreq
+
+  livekit:
+    image: docker.io/livekit/livekit-server:v1.7
+    container_name: hailfreq-livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    network_mode: host  # required for ICE/UDP NAT traversal — see docs/deployment.md
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
 networks:
   hailfreq:
