@@ -151,6 +151,41 @@ Each net has a numeric priority. When any participant in a higher-priority net b
 - ~64 kbps inbound per user (4 monitored nets × ~2 average simultaneous speakers across system × 32 kbps Opus).
 - 500 concurrent × 64 kbps = ~32 Mbps aggregate at SFU. Comfortably within a single 4 vCPU / 1 Gbps VPS.
 
+### 5.6 Net Bridges — client-side audio relay (v1.5)
+
+A **Net Bridge** lets a single operator who is a cryptographic member of two nets relay decrypted audio from one into the other, using their own client and account as the bridge. The use case is allied operations: a guild leader who is in both their own guild's Command net and a cross-org Allied Leadership net can pipe Allied traffic into Command so their own squad leaders hear it in real time.
+
+**Mechanism:**
+
+1. Operator is a cryptographic member of both source net (e.g., Allied Leadership) and target net (e.g., own Command).
+2. The Hailfreq client already decrypts source audio for monitoring.
+3. When the bridge is active, the client takes that decrypted PCM, re-encodes Opus, and publishes it to the target net's LiveKit room — using the operator's existing account in the target net.
+4. Target-net members receive audio that appears (cryptographically) to come from the operator, but the UI surfaces a `[RELAY: <source net>]` badge so they understand the origin.
+
+**Why this preserves Tier 3:**
+
+The operator is already authorized in both nets. The server never receives plaintext; the relay happens entirely on the operator's device. Target-net members never receive source-net encryption keys. Cryptographic membership is the only authorization checked — exactly as today.
+
+**Operating modes** (configurable per direction per net pair):
+
+| Mode | Behavior |
+|---|---|
+| Off | Default. No relay; just monitoring. |
+| PTT relay | Operator presses a key — for the hold duration, source audio relays into target. |
+| Always-on | Continuous source → target while operator is in both. |
+| Smart | Always-on, but ducks while the operator is transmitting their own PTT in the target. |
+
+**Trade-offs:**
+
+- One Opus transcode hop (source decode → mix → target re-encode). Negligible quality loss.
+- The bridging operator is a single point of relay failure; if they disconnect, the bridge dies. Multiple operators can relay redundantly, but receivers will hear duplicates unless a deduplication mechanism is added (open question — see §11).
+- Bandwidth: bridging operator uses ~2× normal during active relay.
+- Bridging is **non-anonymizing for the relayer** — they're publicly the bridge in their target net, as their account is the visible publisher. This is appropriate for leadership use cases.
+
+**Why this is not federation:**
+
+Federation would let one room exist on one server and have native members from other servers. Net Bridges achieve a similar coordination outcome (allied traffic surfaces in own net) without re-enabling Matrix federation between servers. The cost is that the relay is operator-mediated rather than protocol-mediated, but the privacy benefit (no inter-server metadata leakage) is significant.
+
 ## 6. Admin / Squad-Leader Board
 
 ### 6.1 Matrix-native state
@@ -310,6 +345,7 @@ For individual members who want IP privacy beyond what the operator can offer, t
 - Voice activity / open-mic mode for designated nets.
 - Screen sharing UI exposure (LiveKit supports it; we just expose it).
 - QR code device verification (alongside SAS).
+- **Net Bridges** — client-side audio relay between two nets the operator is a member of (§5.6). Enables multi-guild alliance coordination without re-enabling federation.
 - UI polish, theme support.
 
 ### 9.3 v2 (longer-term, demand-driven)
@@ -338,6 +374,8 @@ For individual members who want IP privacy beyond what the operator can offer, t
 - **Audio engine implementation** — Web Audio API vs. native module via Rust binding via N-API. Web Audio is simpler; native gives lower latency. Defer to implementation phase.
 - **Maximum monitored nets** — soft cap to prevent runaway CPU/bandwidth. Suggested: 8. Hard cap: 16.
 - **CitizenID outage UX** — if CitizenID is down at login, client should fall back to local-account login path smoothly. Specific UI to be designed.
+- **Net Bridge default mode** — PTT-relay vs. Always-on vs. Smart as default for new bridges. Lean toward Smart (least surprising) but defer to user testing in v1.5.
+- **Net Bridge redundancy semantics** — when multiple operators relay the same source → target pair, sequence-number-based deduplication is feasible but adds complexity. Decide during v1.5 implementation whether to dedupe or just let receivers hear duplicates briefly.
 
 ## 12. References
 
