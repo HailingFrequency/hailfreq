@@ -2,7 +2,7 @@ name: hailfreq
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/postgres:16-alpine
     container_name: hailfreq-postgres
     restart: unless-stopped
     environment:
