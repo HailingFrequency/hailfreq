@@ -142,10 +142,18 @@ Share the username and password with the member out-of-band.
 **Token-based registration:**
 
 ```bash
-docker compose exec synapse python -m synapse.app.homeserver --generate-token --config-path /data/homeserver.yaml
+# 1. Find your admin access token (Element shows it under Settings → Help & About → "Access Token")
+ADMIN_TOKEN="<paste your admin access token>"
+
+# 2. Create a single-use registration token via Synapse admin API
+docker compose exec synapse curl -X POST \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"uses_allowed": 1}' \
+  http://localhost:8008/_synapse/admin/v1/registration_tokens/new
 ```
 
-Share the registration token with the member. They register via Element using that token.
+The response will include a `token` field — share that value with the member, who enters it when registering via Element.
 
 **CitizenID:** if configured, members just click "Sign in with Citizen iD" on the login screen and an account is auto-created on first login (subject to the `attribute_requirements` configured in `synapse/oidc-citizenid.yaml.snippet`).
 
