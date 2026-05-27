@@ -757,7 +757,7 @@ rtc:
   port_range_start: 50000
   port_range_end: 50100
   use_external_ip: true
-  external_ip: "${HAILFREQ_PUBLIC_IP}"
+  node_ip: "${HAILFREQ_PUBLIC_IP}"
 
 keys:
   ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
@@ -768,7 +768,6 @@ turn:
   tls_port: 5349
   udp_port: 3478
   external_tls: true
-  loadBalancerType: "none"
 
 logging:
   level: info
