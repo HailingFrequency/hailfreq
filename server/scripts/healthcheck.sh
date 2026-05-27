@@ -18,7 +18,9 @@ fail() { echo "  ✗ $1"; exit 1; }
 
 echo "Container health:"
 for svc in postgres synapse caddy livekit coturn; do
-  status=$(docker compose ps --format json "$svc" 2>/dev/null | python3 -c 'import sys,json; d=json.loads(sys.stdin.read() or "{}"); print(d.get("Health","none"))' 2>/dev/null || echo "missing")
+  status=$(docker compose ps --format json "$svc" 2>/dev/null \
+    | python3 -c 'import sys,json; lines=[l for l in sys.stdin if l.strip()]; d=json.loads(lines[-1]) if lines else {}; print(d.get("Health","none"))' \
+    2>/dev/null || echo "missing")
   case "$status" in
     healthy|none) pass "$svc ($status)" ;;
     *) fail "$svc ($status)" ;;
