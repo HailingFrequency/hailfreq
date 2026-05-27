@@ -1,0 +1,13 @@
+.env
+secrets/
+data/
+caddy_data/
+caddy_config/
+postgres_data/
+synapse_data/
+livekit_data/
+*.log
+.pytest_cache/
+__pycache__/
+*.pyc
+.venv/
