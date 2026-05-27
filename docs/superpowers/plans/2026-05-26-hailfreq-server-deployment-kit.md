@@ -251,7 +251,7 @@ name: hailfreq
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/postgres:16-alpine
     container_name: hailfreq-postgres
     restart: unless-stopped
     environment:
@@ -292,8 +292,9 @@ docker compose exec postgres pg_isready -U synapse -d synapse
 - [ ] **Step 4: Confirm Synapse DB was created with correct collation**
 
 ```bash
-docker compose exec postgres psql -U synapse -d synapse -c "SHOW LC_COLLATE;"
-# Expected: lc_collate column = "C"
+docker compose exec postgres psql -U synapse -d synapse -c \
+  "SELECT datcollate FROM pg_database WHERE datname='synapse';"
+# Expected: datcollate column = "C"
 ```
 
 - [ ] **Step 5: Tear down**
