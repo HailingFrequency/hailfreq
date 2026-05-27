@@ -7,9 +7,9 @@ See [`docs/deployment.md`](docs/deployment.md) for the full operator guide.
 ## Quick start
 
 ```bash
-cp .env.example .env
-./scripts/generate-secrets.sh
-./scripts/setup.sh your-domain.com admin@you.com
+./scripts/setup.sh radio.your-guild.com admin@your-guild.com
+# Edit .env to set HAILFREQ_PUBLIC_IP (your VPS public IPv4)
+./scripts/setup.sh        # re-run to render configs with the new IP
 docker compose up -d
 ./scripts/healthcheck.sh
 ```
