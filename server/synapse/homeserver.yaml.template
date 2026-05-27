@@ -94,3 +94,12 @@ rc_login:
   failed_attempts:
     per_second: 0.17
     burst_count: 3
+
+# TURN config — advertise coturn to clients via /_matrix/client/v3/voip/turnServer
+turn_uris:
+  - "turn:${HAILFREQ_DOMAIN}:3478?transport=udp"
+  - "turn:${HAILFREQ_DOMAIN}:3478?transport=tcp"
+  - "turns:${HAILFREQ_DOMAIN}:5349?transport=tcp"
+turn_shared_secret: "${TURN_SHARED_SECRET}"
+turn_user_lifetime: 86400000
+turn_allow_guests: false
