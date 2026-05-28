@@ -1,6 +1,8 @@
-import { NetConnection } from "./NetConnection";
+import { NetConnection, type E2EEConfig } from "./NetConnection";
 import { fetchLiveKitToken, authBaseUrlFromHomeserver } from "./auth";
 import { startKeyRotationCoordinator, type RotationHandle } from "./keyRotationCoordinator";
+import { fetchSframeKey } from "./sframeKeys";
+import { createLiveKitE2EEWorker } from "./e2eeWorker";
 import type { MatrixClient } from "matrix-js-sdk";
 import { ExternalE2EEKeyProvider } from "livekit-client";
 import type { RemoteAudioTrack, RemoteParticipant } from "livekit-client";
@@ -99,7 +101,15 @@ export class VoiceEngine {
       matrixRoomId: args.matrixRoomId,
     });
 
-    const connection = new NetConnection();
+    const keyBytes = await fetchSframeKey(this.client, args.matrixRoomId);
+    let e2eeConfig: E2EEConfig | undefined;
+    if (keyBytes) {
+      e2eeConfig = { keyBytes, worker: createLiveKitE2EEWorker() };
+    } else {
+      console.warn(`Net ${args.matrixRoomId} has no SFrame key — joining without E2EE`);
+    }
+
+    const connection = new NetConnection({ e2ee: e2eeConfig });
     const liveKitRoomName = url.split("/").pop() || ""; // best-effort; not load-bearing
     const volumeGain = this.audioCtx!.createGain();
     volumeGain.gain.value = 1.0;
