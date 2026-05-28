@@ -416,6 +416,30 @@ export function AppState() {
     [state.servers],
   );
 
+  const handleRenameServer = useCallback(
+    async (serverId: string, newLabel: string) => {
+      const instance = state.servers.get(serverId);
+      if (!instance) return;
+
+      // Update persistent store via IPC
+      await window.hailfreq.invoke("servers:update", {
+        serverId,
+        patch: { label: newLabel },
+      });
+
+      // Update local state
+      setState((s) =>
+        patchServer(s, serverId, {
+          entry: {
+            ...s.servers.get(serverId)!.entry,
+            label: newLabel,
+          },
+        }),
+      );
+    },
+    [state.servers],
+  );
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -449,6 +473,7 @@ export function AppState() {
         onSelect={handleSelectServer}
         onAddClicked={handleAddClicked}
         onRemoveServer={handleRemoveServer}
+        onRenameServer={handleRenameServer}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (

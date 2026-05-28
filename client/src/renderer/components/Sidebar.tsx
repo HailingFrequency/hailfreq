@@ -14,9 +14,10 @@ interface SidebarProps {
   onSelect: (serverId: string) => void;
   onAddClicked: () => void;
   onRemoveServer: (serverId: string) => Promise<void>;
+  onRenameServer: (serverId: string, newLabel: string) => Promise<void>;
 }
 
-export function Sidebar({ servers, activeServerId, onSelect, onAddClicked, onRemoveServer }: SidebarProps) {
+export function Sidebar({ servers, activeServerId, onSelect, onAddClicked, onRemoveServer, onRenameServer }: SidebarProps) {
   const [contextMenuFor, setContextMenuFor] = useState<ServerEntry | null>(null);
 
   return (
@@ -45,6 +46,7 @@ export function Sidebar({ servers, activeServerId, onSelect, onAddClicked, onRem
           server={contextMenuFor}
           onClose={() => setContextMenuFor(null)}
           onRemove={() => onRemoveServer(contextMenuFor.id)}
+          onRename={(newLabel) => onRenameServer(contextMenuFor.id, newLabel)}
         />
       )}
     </>
