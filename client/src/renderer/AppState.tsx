@@ -3,12 +3,15 @@ import type { ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
 import { startClient } from "./matrix/client";
-import { subscribeToVerificationRequests } from "./matrix/verification";
+import { subscribeToVerificationRequests, availableMethods } from "./matrix/verification";
+import type { VerificationMethodChoice } from "./matrix/verification";
 import { RoomEvent } from "matrix-js-sdk";
 import type { MatrixEvent, Room } from "matrix-js-sdk";
 import type { IRoomTimelineData } from "matrix-js-sdk/lib/models/event-timeline-set";
 import { Sidebar } from "./components/Sidebar";
 import { EmojiVerification } from "./components/EmojiVerification";
+import { QrVerification } from "./components/QrVerification";
+import type { QrMode } from "./components/QrVerification";
 import { AddServer } from "./screens/AddServer";
 import { Login } from "./screens/Login";
 import { EncryptionSetup } from "./screens/EncryptionSetup";
@@ -30,8 +33,15 @@ interface ServerInstance {
     | { kind: "encryption-setup"; password: string | null }
     | { kind: "restore-from-recovery" }
     | { kind: "home" };
-  /** Non-null when an incoming SAS verification request is waiting to be handled. */
+  /** Non-null when an incoming verification request is waiting to be handled. */
   pendingVerification?: VerificationRequest;
+  /**
+   * Which verification method the user has chosen.
+   * - undefined: not yet chosen (show picker if multiple methods available)
+   * - "sas": emoji comparison via EmojiVerification
+   * - "qr-show" | "qr-scan": QR code via QrVerification
+   */
+  chosenVerificationMethod?: VerificationMethodChoice;
   /** Unread message count for this server while it is not the active server. */
   unreadCount: number;
 }
@@ -355,8 +365,20 @@ export function AppState() {
   );
 
   const makeVerificationDoneHandler = useCallback(
-    (serverId: string) => () => {
-      setState((s) => patchServer(s, serverId, { pendingVerification: undefined }));
+    (serverId: string) => (_verified?: boolean) => {
+      setState((s) =>
+        patchServer(s, serverId, {
+          pendingVerification: undefined,
+          chosenVerificationMethod: undefined,
+        }),
+      );
+    },
+    [],
+  );
+
+  const makeVerificationMethodChosenHandler = useCallback(
+    (serverId: string) => (method: VerificationMethodChoice) => {
+      setState((s) => patchServer(s, serverId, { chosenVerificationMethod: method }));
     },
     [],
   );
@@ -502,6 +524,7 @@ export function AppState() {
             onRestored={makeRestoredHandler(activeInstance.entry.id)}
             onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle)}
             onVerificationDone={makeVerificationDoneHandler(activeInstance.entry.id)}
+            onVerificationMethodChosen={makeVerificationMethodChosenHandler(activeInstance.entry.id)}
             onTransmittingChange={handleTransmittingChange}
           />
         ) : (
@@ -523,7 +546,8 @@ interface ActiveServerViewProps {
   onNeedsExistingRecovery: () => void;
   onRestored: () => void;
   onLogout: () => Promise<void>;
-  onVerificationDone: () => void;
+  onVerificationDone: (verified?: boolean) => void;
+  onVerificationMethodChosen: (method: VerificationMethodChoice) => void;
   onTransmittingChange: (net: string | null) => void;
 }
 
@@ -535,14 +559,53 @@ function ActiveServerView({
   onRestored,
   onLogout,
   onVerificationDone,
+  onVerificationMethodChosen,
   onTransmittingChange,
 }: ActiveServerViewProps) {
-  const { screen, entry, handle, pendingVerification } = instance;
+  const { screen, entry, handle, pendingVerification, chosenVerificationMethod } = instance;
 
-  // If an incoming verification request is pending, render the overlay
+  // If an incoming verification request is pending, render the verification overlay
   // regardless of which screen the server is on (it will be on "home" for
   // signed-in servers, but be defensive).
   if (pendingVerification != null) {
+    const methods = availableMethods(pendingVerification);
+
+    // If only SAS is available (or no QR methods), route directly to EmojiVerification.
+    const hasQr = methods.includes("qr-show") || methods.includes("qr-scan");
+
+    // If a method has already been chosen, route to the appropriate component.
+    if (chosenVerificationMethod === "sas" || (!hasQr && methods.includes("sas"))) {
+      return (
+        <EmojiVerification
+          request={pendingVerification}
+          onDone={onVerificationDone}
+        />
+      );
+    }
+
+    if (chosenVerificationMethod === "qr-show" || chosenVerificationMethod === "qr-scan") {
+      return (
+        <QrVerification
+          request={pendingVerification}
+          mode={chosenVerificationMethod as QrMode}
+          onDone={onVerificationDone}
+        />
+      );
+    }
+
+    // No method chosen yet + QR is available → show the picker.
+    if (hasQr) {
+      return (
+        <VerificationMethodPicker
+          methods={methods}
+          request={pendingVerification}
+          onChoose={onVerificationMethodChosen}
+          onCancel={() => onVerificationDone(false)}
+        />
+      );
+    }
+
+    // Fallback: no methods at all or SAS only with no prior choice.
     return (
       <EmojiVerification
         request={pendingVerification}
@@ -592,6 +655,75 @@ function ActiveServerView({
       );
 
   }
+}
+
+// ---------------------------------------------------------------------------
+// Verification method picker
+// ---------------------------------------------------------------------------
+
+interface VerificationMethodPickerProps {
+  methods: VerificationMethodChoice[];
+  request: VerificationRequest;
+  onChoose: (method: VerificationMethodChoice) => void;
+  onCancel: () => void;
+}
+
+function VerificationMethodPicker({
+  methods,
+  request,
+  onChoose,
+  onCancel,
+}: VerificationMethodPickerProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="w-full max-w-sm rounded-xl bg-slate-800 p-6 shadow-2xl">
+        <h2 className="mb-1 text-lg font-semibold text-white">Verify Device</h2>
+        <p className="mb-4 text-sm text-slate-400">
+          From:{" "}
+          <span className="font-mono text-slate-300">
+            {request.otherUserId}
+            {request.otherDeviceId ? ` / ${request.otherDeviceId}` : ""}
+          </span>
+        </p>
+        <p className="mb-4 text-sm text-slate-300">Choose a verification method:</p>
+        <div className="flex flex-col gap-2">
+          {methods.includes("sas") && (
+            <button
+              onClick={() => onChoose("sas")}
+              className="rounded-lg bg-slate-700 px-4 py-3 text-left text-sm text-white hover:bg-slate-600"
+            >
+              <span className="font-semibold">Compare emoji</span>
+              <span className="ml-2 text-slate-400">— both devices show matching emoji</span>
+            </button>
+          )}
+          {methods.includes("qr-show") && (
+            <button
+              onClick={() => onChoose("qr-show")}
+              className="rounded-lg bg-slate-700 px-4 py-3 text-left text-sm text-white hover:bg-slate-600"
+            >
+              <span className="font-semibold">Show QR code</span>
+              <span className="ml-2 text-slate-400">— other device scans this QR</span>
+            </button>
+          )}
+          {methods.includes("qr-scan") && (
+            <button
+              onClick={() => onChoose("qr-scan")}
+              className="rounded-lg bg-slate-700 px-4 py-3 text-left text-sm text-white hover:bg-slate-600"
+            >
+              <span className="font-semibold">Paste QR code</span>
+              <span className="ml-2 text-slate-400">— paste the other device&apos;s QR payload</span>
+            </button>
+          )}
+        </div>
+        <button
+          onClick={onCancel}
+          className="mt-4 w-full rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-500"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
