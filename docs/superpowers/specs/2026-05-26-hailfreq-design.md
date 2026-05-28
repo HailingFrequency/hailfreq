@@ -275,6 +275,8 @@ Each server's encryption setup must be completed independently (no shared keys b
 
 Notification routing: events from all configured servers surface in the UI. Active server context determines which voice nets are monitored at any moment.
 
+**Implementation status:** Shipped in Plan 3. See `docs/superpowers/plans/2026-05-27-hailfreq-multi-server-sidebar.md`.
+
 ### 7.6 Member onboarding
 
 Two operator patterns:
