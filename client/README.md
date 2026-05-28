@@ -18,8 +18,9 @@ After Plan 2, this client supports:
 - Priority ducking (configurable per-net priority levels)
 - Active SFrame key rotation on net-level kicks (forward secrecy)
 - Per-net volume controls
-
-Tactical-radio voice features (multi-net monitor, PTT, priority ducking, admin board) ship in Plan 4 and will evolve in subsequent plans.
+- Admin / squad-leader board (Plan 5): create, rename, recolor, and delete nets; invite and remove members; promote to squad leader / demote; disconnect operators from voice; ban accounts from the server
+- Full roster view across all visible nets with online-status indicators and RSI-verified badges
+- Net properties editor (priority, color, name) accessible from the admin board
 
 ## Quick start
 

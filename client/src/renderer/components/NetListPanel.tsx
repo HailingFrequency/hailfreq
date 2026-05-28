@@ -77,6 +77,19 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
   const [ptt] = useState(() => new PttController(engine));
   const [transmitting, setTransmitting] = useState<string | null>(null);
 
+  // Expose the VoiceEngine for Plan 4/5 E2E tests when running under HAILFREQ_TEST=1.
+  // This lets Playwright's page.evaluate() reach the engine without requiring a real UI action.
+  useEffect(() => {
+    if (process.env.HAILFREQ_TEST === "1") {
+      (window as any).__voiceEngine = engine;
+    }
+    return () => {
+      if (process.env.HAILFREQ_TEST === "1") {
+        delete (window as any).__voiceEngine;
+      }
+    };
+  }, [engine]);
+
   // Track whether initial seed from voicePrefs has been applied
   const seededRef = useRef(false);
 
@@ -265,7 +278,7 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
       <div className="p-6 text-center text-sm text-slate-400">
         <p>No nets yet.</p>
         <p className="mt-1 text-xs text-slate-500">
-          An admin can create one via the "+" button (when wired in Task 15).
+          An admin can create one via the "+" button.
         </p>
       </div>
     );

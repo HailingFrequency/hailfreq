@@ -113,6 +113,33 @@ export async function updateNetProperties(
   }
 }
 
+/** Rename a net's display name (updates BOTH m.room.name and org.hailfreq.net.name). */
+export async function renameNet(
+  client: MatrixClient,
+  matrixRoomId: string,
+  newName: string,
+): Promise<void> {
+  await client.sendStateEvent(matrixRoomId, "m.room.name" as any, { name: newName }, "");
+  await client.sendStateEvent(matrixRoomId, NET_NAME_EVENT as any, { value: newName }, "");
+}
+
+/**
+ * Delete a net. Matrix has no native delete — the convention is for the admin to
+ * leave the room and forget it. Other members can still see it until they leave.
+ * For a full "tombstone" approach we send an m.room.tombstone event.
+ */
+export async function deleteNet(client: MatrixClient, matrixRoomId: string): Promise<void> {
+  // Send a tombstone event so other clients can hide the room
+  await client.sendStateEvent(
+    matrixRoomId,
+    "m.room.tombstone" as any,
+    { body: "Net deleted by admin", replacement_room: "" },
+    "",
+  );
+  // The admin leaves; remaining members will see the tombstone and can leave too
+  await client.leave(matrixRoomId);
+}
+
 /** Subscribe to net membership/property changes; returns unsubscribe function. */
 export function subscribeToNetsChanges(
   client: MatrixClient,
