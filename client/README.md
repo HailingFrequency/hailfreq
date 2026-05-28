@@ -13,8 +13,13 @@ After Plan 2, this client supports:
 - Per-server encryption isolation (each server has its own Recovery Key)
 - In-app unread badges from inactive servers
 - Logout flow
+- Multi-net simultaneous voice monitor (LiveKit-backed) with SFrame E2EE
+- Three PTT modes per net: tap-to-toggle, press-and-hold, voice activation
+- Priority ducking (configurable per-net priority levels)
+- Active SFrame key rotation on net-level kicks (forward secrecy)
+- Per-net volume controls
 
-Tactical-radio voice features (multi-net monitor, PTT, priority ducking, admin board) arrive in Plans 4 and beyond.
+Tactical-radio voice features (multi-net monitor, PTT, priority ducking, admin board) ship in Plan 4 and will evolve in subsequent plans.
 
 ## Quick start
 
