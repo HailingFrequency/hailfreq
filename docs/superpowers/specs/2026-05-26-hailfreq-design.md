@@ -190,6 +190,8 @@ Federation would let one room exist on one server and have native members from o
 
 ## 6. Admin / Squad-Leader Board
 
+**Implementation status (v1):** §6 shipped in Plan 5. See `docs/superpowers/plans/2026-05-28-hailfreq-admin-board.md`. All capabilities in §6.2 are implemented.
+
 ### 6.1 Matrix-native state
 
 All admin board state lives in Matrix primitives. No custom server-side code.
