@@ -69,6 +69,7 @@ export async function loadCredentials(): Promise<StoredCredentials | null> {
 
 export async function clearCredentials(): Promise<void> {
   await fs.rm(tokenFilePath(), { force: true });
+  await fs.rm(plainTextTokenFilePath(), { force: true });
 }
 
 function isNoEntError(err: unknown): boolean {
