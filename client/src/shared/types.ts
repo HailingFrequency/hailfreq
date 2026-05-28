@@ -31,6 +31,7 @@ declare global {
         channel: K,
         ...args: IpcChannels[K]["args"]
       ) => Promise<IpcChannels[K]["result"]>;
+      onHotkey: (cb: (e: { id: string; accelerator: string }) => void) => () => void;
     };
   }
 }

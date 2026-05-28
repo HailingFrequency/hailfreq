@@ -24,6 +24,12 @@ export interface IpcChannels {
     args: [{ homeserverUrl: string; idpId: string }];
     result: { loginToken: string };
   };
+  "hotkeys:register": {
+    args: [{ accelerator: string; metadata: unknown }];
+    result: { id: string } | { error: string };
+  };
+  "hotkeys:unregister": { args: [{ id: string }]; result: void };
+  "hotkeys:list": { args: []; result: Array<{ id: string; accelerator: string; metadata: unknown }> };
 }
 
 export type IpcChannelName = keyof IpcChannels;
