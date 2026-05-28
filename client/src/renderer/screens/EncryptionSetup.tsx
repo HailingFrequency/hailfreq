@@ -4,6 +4,7 @@ import { Button } from "../components/Button";
 import {
   bootstrapCrossSigning,
   bootstrapSecretStorageWithNewKey,
+  createKeyBackup,
   hasCrossSigning,
 } from "../matrix/crypto";
 
@@ -65,6 +66,7 @@ export function EncryptionSetup({
         });
 
         const { recoveryKey } = await bootstrapSecretStorageWithNewKey(client);
+        await createKeyBackup(client);
         setState({ kind: "showing-key", recoveryKey });
       } catch (err) {
         setState({
