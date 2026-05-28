@@ -32,7 +32,7 @@ export async function uploadSframeKey(
   // (which is NOT encrypted on Matrix even in E2EE rooms).
   await client.sendEvent(matrixRoomId, SFRAME_KEY_EVENT as any, {
     key: keyBase64,
-    algorithm: "AES-GCM-128",
+    algorithm: "SFrame-AES-256",
     issued_at: Date.now(),
   });
 }
