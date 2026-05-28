@@ -13,16 +13,26 @@ export function AppState() {
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
 
   useEffect(() => {
-    void window.hailfreq.invoke("settings:get").then((s) => {
+    void (async () => {
+      const s = await window.hailfreq.invoke("settings:get");
       if (!s.serverUrl) {
         setScreen({ kind: "first-run" });
-      } else if (!s.userId) {
-        setScreen({ kind: "login", serverUrl: s.serverUrl });
-      } else {
-        // Auto-resume path is wired up in Task 11; for now we always go to login.
-        setScreen({ kind: "login", serverUrl: s.serverUrl });
+        return;
       }
-    });
+      const stored = await window.hailfreq.invoke("tokens:load");
+      if (stored && stored.userId === s.userId) {
+        // Validate token by hitting /_matrix/client/v3/account/whoami
+        const ok = await validateAccessToken(stored.homeserverUrl, stored.accessToken);
+        if (ok) {
+          setScreen({ kind: "home", serverUrl: s.serverUrl, userId: stored.userId, creds: stored });
+          return;
+        }
+        // Token rejected — clear and force login
+        await window.hailfreq.invoke("tokens:clear");
+        await window.hailfreq.invoke("settings:set", { userId: "" });
+      }
+      setScreen({ kind: "login", serverUrl: s.serverUrl });
+    })();
   }, []);
 
   switch (screen.kind) {
@@ -50,4 +60,15 @@ function CenteredMessage({ children }: { children: ReactNode }) {
       <p className="text-sm text-slate-400">{children}</p>
     </div>
   );
+}
+
+async function validateAccessToken(homeserverUrl: string, accessToken: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${homeserverUrl}/_matrix/client/v3/account/whoami`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
