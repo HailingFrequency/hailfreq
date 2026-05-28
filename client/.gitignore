@@ -13,3 +13,4 @@ test-results/
 *.tsbuildinfo
 src/**/*.js
 src/**/*.d.ts
+dist-test-preload/
