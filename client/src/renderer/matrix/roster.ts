@@ -1,5 +1,6 @@
 import type { MatrixClient } from "matrix-js-sdk";
 import type { NetSummary } from "./nets";
+import { fetchCitizenIdProfile } from "./profileCache";
 
 export interface RosterMember {
   userId: string;
@@ -42,6 +43,39 @@ export function buildRoster(client: MatrixClient, nets: NetSummary[]): RosterMem
   const out = Array.from(byUser.values());
   out.sort((a, b) => a.displayName.localeCompare(b.displayName));
   return out;
+}
+
+/**
+ * Asynchronously enrich a roster snapshot with CitizenID profile data.
+ * For each member, fetches the RSI claim and calls `onUpdate` with a new
+ * array where rsiVerified/rsiHandle are populated.  Safe to fire after
+ * buildRoster — does not mutate the original array.
+ */
+export async function enrichRosterWithProfiles(
+  client: MatrixClient,
+  members: RosterMember[],
+  onUpdate: (enriched: RosterMember[]) => void,
+): Promise<void> {
+  // Fetch all profiles in parallel (cache makes repeated calls cheap)
+  const claims = await Promise.all(
+    members.map((m) => fetchCitizenIdProfile(client, m.userId)),
+  );
+
+  let changed = false;
+  const enriched = members.map((m, i) => {
+    const claim = claims[i];
+    if (!claim) return m;
+    const verified = claim.rsiVerified === true;
+    const handle = claim.rsiHandle ?? null;
+    if (m.rsiVerified === verified && m.rsiHandle === handle) return m;
+    changed = true;
+    // Return a new object (immutable update per coding standards)
+    return { ...m, rsiVerified: verified, rsiHandle: handle };
+  });
+
+  if (changed) {
+    onUpdate(enriched);
+  }
 }
 
 /** Subscribe to roster changes (membership, presence, power levels) — debounced refresh. */
