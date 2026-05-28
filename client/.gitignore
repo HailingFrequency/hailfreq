@@ -10,3 +10,4 @@ release/
 .vitest-cache/
 playwright-report/
 test-results/
+*.tsbuildinfo
