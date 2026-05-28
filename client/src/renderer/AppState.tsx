@@ -29,8 +29,7 @@ interface ServerInstance {
     | { kind: "login" }
     | { kind: "encryption-setup"; password: string | null }
     | { kind: "restore-from-recovery" }
-    | { kind: "home" }
-    | { kind: "error"; message: string };
+    | { kind: "home" };
   /** Non-null when an incoming SAS verification request is waiting to be handled. */
   pendingVerification?: VerificationRequest;
   /** Unread message count for this server while it is not the active server. */
@@ -267,6 +266,10 @@ export function AppState() {
   }, []);
 
   const handleSelectServer = useCallback((id: string) => {
+    // Fire-and-forget: persist the active server so it survives relaunch.
+    void window.hailfreq.invoke("servers:setActive", { serverId: id }).catch((err: unknown) => {
+      console.error("servers:setActive failed:", err);
+    });
     setState((s) => {
       const existing = s.servers.get(id);
       const servers =
@@ -588,8 +591,6 @@ function ActiveServerView({
         />
       );
 
-    case "error":
-      return <Centered>{screen.message}</Centered>;
   }
 }
 

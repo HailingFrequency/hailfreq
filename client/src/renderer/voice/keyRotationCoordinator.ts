@@ -93,9 +93,22 @@ export function startKeyRotationCoordinator(
     // double-application on the rotating member's device.
     if (event.getSender() === client.getSafeUserId()) return;
 
-    // Give the SDK a short window to finish Megolm decryption before reading.
+    // Wait for Megolm decryption to complete before reading the key event content.
+    // The SDK emits "Event.decrypted" when decryption finishes (success or error).
+    // Fall back to 50ms polling if the event's once() API is unavailable.
     if (event.isBeingDecrypted()) {
-      await new Promise<void>((r) => setTimeout(r, 100));
+      await new Promise<void>((resolve) => {
+        try {
+          (event as any).once("Event.decrypted", () => resolve());
+        } catch {
+          const interval = setInterval(() => {
+            if (!event.isBeingDecrypted()) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 50);
+        }
+      });
     }
 
     // Re-scan the full timeline so the index assignment is authoritative

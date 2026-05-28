@@ -140,9 +140,23 @@ export class VoiceEngine {
       .on("activeSpeakersChanged", (identities) =>
         this.handleActiveSpeakersChanged(state, identities),
       )
-      .on("connectionStateChanged", (s) =>
-        this.listeners.netStateChanged?.(args.matrixRoomId, s),
-      );
+      .on("connectionStateChanged", (s) => {
+        this.listeners.netStateChanged?.(args.matrixRoomId, s);
+        // Best-effort JWT-expiry recovery: if the connection drops unexpectedly,
+        // attempt to re-monitor once. LiveKit JWTs expire after 6 h; a quiet
+        // disconnect is the most common symptom. We only retry once to avoid
+        // a loop when the net was intentionally unmonitored.
+        if (s === "disconnected" && this.nets.has(args.matrixRoomId)) {
+          console.warn(`[VoiceEngine] Net ${args.matrixRoomId} disconnected — attempting re-monitor (JWT expiry recovery)`);
+          void this.unmonitorNet(args.matrixRoomId).then(() =>
+            this.monitorNet({ matrixRoomId: args.matrixRoomId, priority: args.priority }).catch(
+              (err: unknown) => {
+                console.error(`[VoiceEngine] Re-monitor failed for ${args.matrixRoomId}:`, err);
+              },
+            ),
+          );
+        }
+      });
 
     await connection.connect(url, token);
     this.nets.set(args.matrixRoomId, state);

@@ -56,8 +56,22 @@ export async function fetchSframeKey(
     if (ev.getType() !== SFRAME_KEY_EVENT) continue;
     // Wait for decryption if encrypted
     if (ev.isBeingDecrypted()) {
-      // Listen for completion (simplified — production should subscribe properly)
-      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      // Wait for Megolm decryption to complete instead of a blind sleep.
+      // The SDK emits "Event.decrypted" when decryption finishes (success or error).
+      // Fall back to a 50ms poll if the event API is not callable.
+      await new Promise<void>((resolve) => {
+        try {
+          (ev as any).once("Event.decrypted", () => resolve());
+        } catch {
+          // SDK version doesn't support once() — fall back to polling
+          const interval = setInterval(() => {
+            if (!ev.isBeingDecrypted()) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 50);
+        }
+      });
     }
     const content = ev.getContent();
     if (typeof content.key !== "string") continue;
@@ -81,7 +95,20 @@ export async function listSframeKeys(
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
     if (ev.getType() !== SFRAME_KEY_EVENT) continue;
-    if (ev.isBeingDecrypted()) await new Promise<void>((r) => setTimeout(r, 50));
+    if (ev.isBeingDecrypted()) {
+      await new Promise<void>((resolve) => {
+        try {
+          (ev as any).once("Event.decrypted", () => resolve());
+        } catch {
+          const interval = setInterval(() => {
+            if (!ev.isBeingDecrypted()) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 50);
+        }
+      });
+    }
     const content = ev.getContent();
     if (typeof content.key !== "string") continue;
     out.push({
