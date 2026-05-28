@@ -107,7 +107,6 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
         <p className="mt-1 text-sm text-slate-400">{serverUrl}</p>
       </header>
 
-      {/* CitizenID button — wired in Task 13 */}
       {flows?.supportsOidcSso && (
         <Button
           variant="primary"

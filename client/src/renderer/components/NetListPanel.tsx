@@ -278,7 +278,7 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
       <div className="p-6 text-center text-sm text-slate-400">
         <p>No nets yet.</p>
         <p className="mt-1 text-xs text-slate-500">
-          An admin can create one via the "+" button (when wired in Task 15).
+          An admin can create one via the "+" button.
         </p>
       </div>
     );

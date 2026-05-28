@@ -90,10 +90,11 @@ export function NetPropertiesEditor({
         <form onSubmit={handleSave} className="flex flex-col gap-4">
           {/* Name */}
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">
+            <label htmlFor="net-name-input" className="mb-1 block text-xs font-medium text-slate-400">
               Net name
             </label>
             <input
+              id="net-name-input"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
