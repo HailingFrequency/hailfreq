@@ -78,6 +78,12 @@ docker compose up -d
 
 First startup takes ~60 seconds for Postgres to initialize and Synapse to generate its signing key.
 
+### livekit-auth — LiveKit token minting service
+
+After Plan 4, the stack includes a `livekit-auth` service that mints LiveKit JWTs for Hailfreq clients. It validates Matrix access tokens against Synapse and confirms room membership before issuing a JWT. Caddy exposes it at `/lk-auth/*`.
+
+**Image build:** Built from `server/livekit-auth/` by the setup script. To force a rebuild: `docker compose build livekit-auth`.
+
 ### First-start volume ownership (rootless container runtimes)
 
 If you're using rootless Docker or rootless Podman, the user inside the Synapse container (uid 991) needs write access to the named volume. After the first `docker compose up -d`, if Synapse fails to start with permission errors writing to `/data/signing.key`, fix the ownership:

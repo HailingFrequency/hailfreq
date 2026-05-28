@@ -6,9 +6,10 @@ interface ServerIconProps {
   onClick: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   unreadCount?: number;
+  transmitting?: boolean;
 }
 
-export function ServerIcon({ server, active, onClick, onContextMenu, unreadCount }: ServerIconProps) {
+export function ServerIcon({ server, active, onClick, onContextMenu, unreadCount, transmitting }: ServerIconProps) {
   const initial = (server.label.trim()[0] ?? server.serverUrl[0] ?? "?").toUpperCase();
   const badgeLabel = unreadCount != null && unreadCount > 99 ? "99+" : String(unreadCount ?? 0);
   const showBadge = unreadCount != null && unreadCount > 0;
@@ -25,7 +26,7 @@ export function ServerIcon({ server, active, onClick, onContextMenu, unreadCount
         active
           ? "bg-brand-500 text-slate-900 ring-2 ring-brand-400 ring-offset-2 ring-offset-slate-950"
           : "bg-slate-800 text-slate-200 hover:bg-slate-700 hover:rounded-xl"
-      }`}
+      } ${transmitting ? "animate-pulse ring-2 ring-brand-300" : ""}`}
     >
       {active && (
         <span className="absolute -left-3 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r bg-brand-400" />

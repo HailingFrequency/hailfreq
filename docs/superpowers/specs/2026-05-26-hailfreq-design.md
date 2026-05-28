@@ -151,6 +151,8 @@ Each net has a numeric priority. When any participant in a higher-priority net b
 - ~64 kbps inbound per user (4 monitored nets × ~2 average simultaneous speakers across system × 32 kbps Opus).
 - 500 concurrent × 64 kbps = ~32 Mbps aggregate at SFU. Comfortably within a single 4 vCPU / 1 Gbps VPS.
 
+**Implementation status (v1):** §5.1–5.5 shipped in Plan 4. See `docs/superpowers/plans/2026-05-28-hailfreq-voice-engine.md`. §5.6 (Net Bridges) remains v1.5.
+
 ### 5.6 Net Bridges — client-side audio relay (v1.5)
 
 A **Net Bridge** lets a single operator who is a cryptographic member of two nets relay decrypted audio from one into the other, using their own client and account as the bridge. The use case is allied operations: a guild leader who is in both their own guild's Command net and a cross-org Allied Leadership net can pipe Allied traffic into Command so their own squad leaders hear it in real time.

@@ -11,6 +11,12 @@ $HAILFREQ_DOMAIN {
     reverse_proxy synapse:8008
   }
 
+  # LiveKit auth service — mints JWTs after validating Matrix tokens
+  handle /lk-auth/* {
+    uri strip_prefix /lk-auth
+    reverse_proxy livekit-auth:8088
+  }
+
   # LiveKit signaling (WebSocket); media uses UDP direct to host
   handle /livekit/* {
     uri strip_prefix /livekit

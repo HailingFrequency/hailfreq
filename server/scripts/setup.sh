@@ -75,6 +75,11 @@ envsubst < livekit/livekit.yaml.template > livekit/livekit.yaml
 echo "→ Rendering coturn/turnserver.conf"
 envsubst < coturn/turnserver.conf.template > coturn/turnserver.conf
 
+# Build the bundled livekit-auth image so podman/docker compose can use it
+echo "→ Building livekit-auth image"
+docker compose --file compose.yml build livekit-auth 2>&1 | tail -3 || \
+  podman compose --file compose.yml build livekit-auth 2>&1 | tail -3
+
 echo ""
 echo "Setup complete. Next steps:"
 echo "  1. Verify your DNS A record for ${HAILFREQ_DOMAIN} points to ${HAILFREQ_PUBLIC_IP}"

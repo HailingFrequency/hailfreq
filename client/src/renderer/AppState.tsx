@@ -46,6 +46,8 @@ interface AppLevelState {
     | { kind: "no-servers" }
     | { kind: "active" }
     | { kind: "adding-server" };
+  /** The net ID currently being PTT'd on the active server (if any). */
+  transmittingNet: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +114,7 @@ export function AppState() {
     servers: new Map(),
     activeServerId: "",
     globalScreen: { kind: "loading" },
+    transmittingNet: null,
   });
 
   // Boot: load settings, initialise one ServerInstance per configured server.
@@ -135,7 +138,7 @@ export function AppState() {
       const globalScreen: AppLevelState["globalScreen"] =
         settings.servers.length === 0 ? { kind: "no-servers" } : { kind: "active" };
 
-      setState({ servers, activeServerId, globalScreen });
+      setState({ servers, activeServerId, globalScreen, transmittingNet: null });
     })();
 
     // Best-effort shutdown of all ClientHandles when the component unmounts.
@@ -440,6 +443,10 @@ export function AppState() {
     [state.servers],
   );
 
+  const handleTransmittingChange = useCallback((net: string | null) => {
+    setState((s) => ({ ...s, transmittingNet: net }));
+  }, []);
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -468,6 +475,7 @@ export function AppState() {
         servers={Array.from(state.servers.values()).map((s) => ({
           entry: s.entry,
           unreadCount: s.unreadCount,
+          transmitting: state.activeServerId === s.entry.id && state.transmittingNet !== null,
         }))}
         activeServerId={state.activeServerId}
         onSelect={handleSelectServer}
@@ -491,6 +499,7 @@ export function AppState() {
             onRestored={makeRestoredHandler(activeInstance.entry.id)}
             onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle)}
             onVerificationDone={makeVerificationDoneHandler(activeInstance.entry.id)}
+            onTransmittingChange={handleTransmittingChange}
           />
         ) : (
           <Centered>No server selected.</Centered>
@@ -512,6 +521,7 @@ interface ActiveServerViewProps {
   onRestored: () => void;
   onLogout: () => Promise<void>;
   onVerificationDone: () => void;
+  onTransmittingChange: (net: string | null) => void;
 }
 
 function ActiveServerView({
@@ -522,6 +532,7 @@ function ActiveServerView({
   onRestored,
   onLogout,
   onVerificationDone,
+  onTransmittingChange,
 }: ActiveServerViewProps) {
   const { screen, entry, handle, pendingVerification } = instance;
 
@@ -572,6 +583,8 @@ function ActiveServerView({
         <Home
           client={handle!.client}
           onLogout={onLogout}
+          serverEntry={entry}
+          onTransmittingChange={onTransmittingChange}
         />
       );
 

@@ -6,6 +6,25 @@ const api = {
     channel: K,
     ...args: IpcChannels[K]["args"]
   ): Promise<IpcChannels[K]["result"]> => ipcRenderer.invoke(channel, ...args),
+  onHotkey: (cb: (e: { id: string; accelerator: string }) => void) => {
+    const pressedHandler = (_event: unknown, payload: { id: string; accelerator: string }) => cb(payload);
+    ipcRenderer.on("hotkey:pressed", pressedHandler);
+    return () => ipcRenderer.off("hotkey:pressed", pressedHandler);
+  },
+  onNativeHotkey: (
+    cb: (e: { id: string; accelerator: string; direction: "down" | "up" }) => void,
+  ) => {
+    const downHandler = (_e: unknown, p: { id: string; accelerator: string }) =>
+      cb({ ...p, direction: "down" });
+    const upHandler = (_e: unknown, p: { id: string; accelerator: string }) =>
+      cb({ ...p, direction: "up" });
+    ipcRenderer.on("nativeHotkey:down", downHandler);
+    ipcRenderer.on("nativeHotkey:up", upHandler);
+    return () => {
+      ipcRenderer.off("nativeHotkey:down", downHandler);
+      ipcRenderer.off("nativeHotkey:up", upHandler);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld("hailfreq", api);

@@ -1,0 +1,23 @@
+{
+  "name": "hailfreq-livekit-auth",
+  "version": "0.1.0",
+  "description": "Token-minting service that validates Matrix access tokens and issues LiveKit JWTs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "livekit-server-sdk": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": { "node": ">=20" }
+}
