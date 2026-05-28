@@ -33,3 +33,24 @@ export async function fetchLiveKitToken(args: {
 export function authBaseUrlFromHomeserver(homeserverUrl: string): string {
   return homeserverUrl.replace(/\/+$/, "") + "/lk-auth";
 }
+
+export async function kickFromVoice(args: {
+  hailfreqAuthBaseUrl: string;
+  matrixAccessToken: string;
+  matrixRoomId: string;
+  targetUserId: string;
+}): Promise<void> {
+  const resp = await fetch(`${args.hailfreqAuthBaseUrl}/kick`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      matrixAccessToken: args.matrixAccessToken,
+      matrixRoomId: args.matrixRoomId,
+      targetUserId: args.targetUserId,
+    }),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`kick failed: ${resp.status} ${body}`);
+  }
+}
