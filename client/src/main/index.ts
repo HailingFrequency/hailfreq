@@ -1,9 +1,11 @@
 import { app, BrowserWindow } from "electron";
 import { createMainWindow } from "./window";
+import { registerIpcHandlers } from "./ipc";
 
 let mainWindow: BrowserWindow | null = null;
 
 app.whenReady().then(() => {
+  registerIpcHandlers();
   mainWindow = createMainWindow();
 
   app.on("activate", () => {
