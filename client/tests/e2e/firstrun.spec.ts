@@ -15,7 +15,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { startSynapse } from "./helpers/synapse";
+import { startSynapseInstance } from "./helpers/synapse";
 
 // __dirname is not available in ES modules; derive it from import.meta.url
 const __filename = fileURLToPath(import.meta.url);
@@ -27,7 +27,7 @@ const CLIENT_DIR = path.resolve(__dirname, "../../");
 test("first-run → local login → encryption setup → home", async () => {
   // Start Synapse and provision a test user before launching Electron.
   // This ensures credentials are available before the app starts.
-  const synapse = await startSynapse();
+  const synapse = await startSynapseInstance("default", 8008);
 
   let app: Awaited<ReturnType<typeof electron.launch>> | null = null;
 
@@ -62,9 +62,9 @@ test("first-run → local login → encryption setup → home", async () => {
       timeout: 15_000,
     });
 
-    // Enter the Synapse URL
+    // Enter the Synapse URL and click "Add server" (the new multi-server AddServer screen)
     await win.getByLabel("Server URL").fill(synapse.url);
-    await win.getByRole("button", { name: "Continue" }).click();
+    await win.getByRole("button", { name: "Add server" }).click();
 
     // === Step 2: Login screen ===
     // The app probes /_matrix/client/versions to confirm it's a Matrix server,

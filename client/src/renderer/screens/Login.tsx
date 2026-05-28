@@ -35,7 +35,9 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
     try {
       const creds = await loginWithPassword(serverUrl, username, password);
       // Persistence (tokens:save, servers:update) is handled by AppState's onLoggedIn callback.
-      onLoggedIn(creds, password);
+      // Awaiting onLoggedIn ensures that any error from startClient (e.g. crypto init failure)
+      // is surfaced on the Login form rather than silently dropped as an unhandled rejection.
+      await onLoggedIn(creds, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
