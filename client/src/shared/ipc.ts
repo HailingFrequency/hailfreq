@@ -1,4 +1,7 @@
 import type { Settings, ServerEntry } from "./types";
+import type { ChirpSummary } from "../main/chirps";
+
+export type { ChirpSummary };
 
 export interface StoredCredentials {
   userId: string;
@@ -35,6 +38,9 @@ export interface IpcChannels {
     result: { id: string } | { error: string };
   };
   "nativeHotkey:unregisterHold": { args: [{ id: string }]; result: void };
+  "chirps:list": { args: []; result: ChirpSummary[] };
+  "chirps:read": { args: [{ id: string }]; result: Uint8Array };
+  "chirps:openFolder": { args: []; result: string };
 }
 
 export type IpcChannelName = keyof IpcChannels;

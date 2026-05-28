@@ -4,6 +4,7 @@ import { saveCredentials, loadCredentials, clearCredentials, migrateLegacyCreden
 import { runSsoFlow } from "./oidc";
 import { registerHotkey, unregisterHotkey, listHotkeys } from "./globalHotkeys";
 import { registerHold, unregisterHold } from "./nativeKeyListener";
+import { listChirps, readChirp, openChirpFolder } from "./chirps";
 import type { Settings, ServerEntry } from "../shared/types";
 import type { StoredCredentials } from "../shared/ipc";
 
@@ -56,4 +57,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("nativeHotkey:unregisterHold", (_event, args: { id: string }) =>
     unregisterHold(args.id),
   );
+
+  ipcMain.handle("chirps:list", () => listChirps());
+  ipcMain.handle("chirps:read", (_e, args: { id: string }) => readChirp(args.id));
+  ipcMain.handle("chirps:openFolder", () => openChirpFolder());
 }
