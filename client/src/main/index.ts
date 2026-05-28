@@ -24,7 +24,10 @@ app.on("window-all-closed", () => {
 // Prevent navigation to arbitrary URLs (defense in depth)
 app.on("web-contents-created", (_event, contents) => {
   contents.on("will-navigate", (event, url) => {
-    const allowed = url.startsWith(process.env.VITE_DEV_SERVER_URL || "")
+    const isDev = !app.isPackaged;
+    const devUrl = process.env.VITE_DEV_SERVER_URL;
+    const allowed =
+      (isDev && !!devUrl && url.startsWith(devUrl))
       || url.startsWith("file://");
     if (!allowed) event.preventDefault();
   });
