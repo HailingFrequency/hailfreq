@@ -229,7 +229,7 @@ test("admin board: admin can open board and interact with nets", async () => {
     // ------------------------------------------------------------------
     console.log("[admin-board test] Checking for admin board button...");
 
-    const adminBoardButton = win.getByRole("button", { name: /admin board/i });
+    const adminBoardButton = win.getByRole("button", { name: /^admin$/i });
     const adminBoardVisible = await adminBoardButton
       .waitFor({ state: "visible", timeout: UI_TIMEOUT_MS })
       .then(() => true)
