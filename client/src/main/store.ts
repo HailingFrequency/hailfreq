@@ -47,6 +47,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
       userId: typed.userId ?? "",
       lastLoginMethod: typed.lastLoginMethod ?? "",
       lastSyncedMs: 0,
+      voicePrefs: { volumes: {}, keybinds: {}, pttModes: {}, voiceThresholds: {}, monitored: [] },
     };
     return {
       servers: [entry],
@@ -92,6 +93,7 @@ export function addServer(label: string, serverUrl: string): ServerEntry {
     userId: "",
     lastLoginMethod: "",
     lastSyncedMs: 0,
+    voicePrefs: { volumes: {}, keybinds: {}, pttModes: {}, voiceThresholds: {}, monitored: [] },
   };
   const servers = settings.get("servers");
   settings.set("servers", [...servers, entry]);

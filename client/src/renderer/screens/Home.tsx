@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
+import type { ServerEntry } from "@shared/types";
 import { Button } from "../components/Button";
 import { NetListPanel } from "../components/NetListPanel";
 import { CreateNetDialog } from "../components/CreateNetDialog";
@@ -7,9 +8,10 @@ import { CreateNetDialog } from "../components/CreateNetDialog";
 interface HomeProps {
   client: MatrixClient;
   onLogout: () => Promise<void> | void;
+  serverEntry: ServerEntry;
 }
 
-export function Home({ client, onLogout }: HomeProps) {
+export function Home({ client, onLogout, serverEntry }: HomeProps) {
   const [creating, setCreating] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -38,7 +40,7 @@ export function Home({ client, onLogout }: HomeProps) {
       </header>
 
       <div className="flex-1 overflow-auto">
-        <NetListPanel client={client} />
+        <NetListPanel client={client} serverEntry={serverEntry} />
       </div>
 
       {creating && (

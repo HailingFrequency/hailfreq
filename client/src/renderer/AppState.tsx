@@ -572,6 +572,7 @@ function ActiveServerView({
         <Home
           client={handle!.client}
           onLogout={onLogout}
+          serverEntry={entry}
         />
       );
 

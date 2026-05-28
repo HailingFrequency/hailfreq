@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
+import type { NetPreferences, ServerEntry } from "@shared/types";
 import { listNets, subscribeToNetsChanges, type NetSummary } from "../matrix/nets";
 import { NetRow } from "./NetRow";
 import { VoiceEngine } from "../voice/VoiceEngine";
@@ -7,6 +8,7 @@ import { PttController, type PttMode } from "../voice/PttController";
 
 interface NetListPanelProps {
   client: MatrixClient;
+  serverEntry: ServerEntry;
 }
 
 interface PerNetUiState {
@@ -29,12 +31,67 @@ function defaultUi(): PerNetUiState {
   };
 }
 
-export function NetListPanel({ client }: NetListPanelProps) {
+/** Build initial per-net UI state from persisted voicePrefs for a given net. */
+function initialUiForNet(
+  matrixRoomId: string,
+  voicePrefs: NetPreferences | undefined,
+): PerNetUiState {
+  const base = defaultUi();
+  if (!voicePrefs) return base;
+  return {
+    ...base,
+    volume: voicePrefs.volumes[matrixRoomId] ?? base.volume,
+    keybind: voicePrefs.keybinds[matrixRoomId] ?? base.keybind,
+    pttMode: (voicePrefs.pttModes[matrixRoomId] as PttMode | undefined) ?? base.pttMode,
+    voiceThresholdDb: voicePrefs.voiceThresholds[matrixRoomId] ?? base.voiceThresholdDb,
+    monitored: voicePrefs.monitored.includes(matrixRoomId),
+  };
+}
+
+/** Derive a NetPreferences snapshot from the current uiState map (excluding activeSpeakers). */
+function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreferences {
+  const prefs: NetPreferences = {
+    volumes: {},
+    keybinds: {},
+    pttModes: {},
+    voiceThresholds: {},
+    monitored: [],
+  };
+  for (const [roomId, ui] of uiState) {
+    prefs.volumes[roomId] = ui.volume;
+    if (ui.keybind !== null) prefs.keybinds[roomId] = ui.keybind;
+    prefs.pttModes[roomId] = ui.pttMode;
+    prefs.voiceThresholds[roomId] = ui.voiceThresholdDb;
+    if (ui.monitored) prefs.monitored.push(roomId);
+  }
+  return prefs;
+}
+
+export function NetListPanel({ client, serverEntry }: NetListPanelProps) {
   const [nets, setNets] = useState<NetSummary[]>([]);
   const [uiState, setUiState] = useState<Map<string, PerNetUiState>>(new Map());
   const [engine] = useState(() => new VoiceEngine(client));
   const [ptt] = useState(() => new PttController(engine));
   const [transmitting, setTransmitting] = useState<string | null>(null);
+
+  // Track whether initial seed from voicePrefs has been applied
+  const seededRef = useRef(false);
+
+  // Persist a prefs snapshot back to the store
+  const persistPrefs = useCallback(
+    (nextUiState: Map<string, PerNetUiState>) => {
+      const voicePrefs = buildNetPreferences(nextUiState);
+      void window.hailfreq
+        .invoke("servers:update", {
+          serverId: serverEntry.id,
+          patch: { voicePrefs },
+        })
+        .catch((err: unknown) => {
+          console.error("Failed to persist voicePrefs:", err);
+        });
+    },
+    [serverEntry.id],
+  );
 
   // Refresh net list on Matrix changes
   useEffect(() => {
@@ -42,6 +99,19 @@ export function NetListPanel({ client }: NetListPanelProps) {
     refresh();
     return subscribeToNetsChanges(client, refresh);
   }, [client]);
+
+  // Seed uiState from persisted voicePrefs once the net list is first populated
+  useEffect(() => {
+    if (seededRef.current || nets.length === 0) return;
+    seededRef.current = true;
+    setUiState(() => {
+      const seeded = new Map<string, PerNetUiState>();
+      for (const net of nets) {
+        seeded.set(net.matrixRoomId, initialUiForNet(net.matrixRoomId, serverEntry.voicePrefs));
+      }
+      return seeded;
+    });
+  }, [nets, serverEntry.voicePrefs]);
 
   // Wire voice engine active-speaker events to UI state
   useEffect(() => {
@@ -76,6 +146,7 @@ export function NetListPanel({ client }: NetListPanelProps) {
       setUiState((m) => {
         const next = new Map(m);
         next.set(net.matrixRoomId, { ...current, monitored: false, activeSpeakers: 0 });
+        persistPrefs(next);
         return next;
       });
     } else {
@@ -86,6 +157,7 @@ export function NetListPanel({ client }: NetListPanelProps) {
       setUiState((m) => {
         const next = new Map(m);
         next.set(net.matrixRoomId, { ...current, monitored: true });
+        persistPrefs(next);
         return next;
       });
     }
@@ -97,6 +169,7 @@ export function NetListPanel({ client }: NetListPanelProps) {
       const next = new Map(m);
       const existing = next.get(matrixRoomId) ?? defaultUi();
       next.set(matrixRoomId, { ...existing, volume });
+      persistPrefs(next);
       return next;
     });
   }
@@ -108,6 +181,7 @@ export function NetListPanel({ client }: NetListPanelProps) {
     setUiState((m) => {
       const next = new Map(m);
       next.set(matrixRoomId, { ...current, pttMode: mode, keybind: null });
+      persistPrefs(next);
       return next;
     });
     // Auto-bind voice mode immediately (no keybind needed)
@@ -138,6 +212,7 @@ export function NetListPanel({ client }: NetListPanelProps) {
       const next = new Map(m);
       const existing = next.get(matrixRoomId) ?? defaultUi();
       next.set(matrixRoomId, { ...existing, keybind: accel });
+      persistPrefs(next);
       return next;
     });
   }
@@ -148,6 +223,7 @@ export function NetListPanel({ client }: NetListPanelProps) {
       const next = new Map(m);
       const existing = next.get(matrixRoomId) ?? defaultUi();
       next.set(matrixRoomId, { ...existing, keybind: null });
+      persistPrefs(next);
       return next;
     });
   }
@@ -157,6 +233,7 @@ export function NetListPanel({ client }: NetListPanelProps) {
       const next = new Map(m);
       const existing = next.get(matrixRoomId) ?? defaultUi();
       next.set(matrixRoomId, { ...existing, voiceThresholdDb: db });
+      persistPrefs(next);
       return next;
     });
     // Re-bind voice mode with the updated threshold
