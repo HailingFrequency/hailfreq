@@ -19,7 +19,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron/main",
-            rollupOptions: { output: { format: "cjs", entryFileNames: "index.cjs" } },
+            rollupOptions: { output: { format: "es", entryFileNames: "index.mjs" } },
           },
         },
       },
@@ -29,7 +29,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron/preload",
-            rollupOptions: { output: { format: "cjs", entryFileNames: "index.cjs" } },
+            rollupOptions: { output: { format: "es", entryFileNames: "index.mjs" } },
           },
         },
       },

@@ -4,7 +4,7 @@
   "description": "Privacy-first Matrix desktop client for tactical voice ops",
   "private": true,
   "type": "module",
-  "main": "dist-electron/main/index.cjs",
+  "main": "dist-electron/main/index.mjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
