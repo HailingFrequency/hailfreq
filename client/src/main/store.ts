@@ -148,13 +148,23 @@ export function updateServer(serverId: string, patch: Partial<ServerEntry>): Ser
   return updated;
 }
 
-export function reorderServers(orderedIds: string[]): void {
-  const servers = settings.get("servers");
+/**
+ * Pure function: reorder a list of ServerEntry objects according to the given ID ordering.
+ * IDs not present in `orderedIds` are appended at the end (safety net).
+ * Exported for unit testing.
+ */
+export function reorderServerList(servers: ServerEntry[], orderedIds: string[]): ServerEntry[] {
   const byId = new Map(servers.map((s) => [s.id, s]));
   const reordered = orderedIds.map((id) => byId.get(id)).filter((s): s is ServerEntry => !!s);
   // Append any servers not present in orderedIds (safety net)
   for (const s of servers) {
     if (!orderedIds.includes(s.id)) reordered.push(s);
   }
+  return reordered;
+}
+
+export function reorderServers(orderedIds: string[]): void {
+  const servers = settings.get("servers");
+  const reordered = reorderServerList(servers, orderedIds);
   settings.set("servers", reordered);
 }
