@@ -4,10 +4,12 @@ import { FirstRun } from "./screens/FirstRun";
 import { Login } from "./screens/Login";
 import { EncryptionSetup } from "./screens/EncryptionSetup";
 import { RestoreFromRecoveryKey } from "./screens/RestoreFromRecoveryKey";
+import { Home } from "./screens/Home";
 import type { Credentials } from "./matrix/types";
 import { EmojiVerification } from "./components/EmojiVerification";
 import { subscribeToVerificationRequests } from "./matrix/verification";
 import type { VerificationRequest } from "matrix-js-sdk/lib/crypto-api/verification";
+import type { ClientHandle } from "./matrix/client";
 
 type Screen =
   | { kind: "loading" }
@@ -18,13 +20,15 @@ type Screen =
       client: MatrixClient;
       password: string | null;
       creds: Credentials;
+      handle: ClientHandle;
     }
   | {
       kind: "restore-from-recovery";
       client: MatrixClient;
       creds: Credentials;
+      handle: ClientHandle;
     }
-  | { kind: "home"; serverUrl: string; userId: string; creds: Credentials; client: MatrixClient };
+  | { kind: "home"; serverUrl: string; userId: string; creds: Credentials; client: MatrixClient; handle: ClientHandle };
 
 export function AppState() {
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
@@ -43,7 +47,7 @@ export function AppState() {
         if (ok) {
           const { startClient } = await import("./matrix/client");
           const handle = await startClient(stored);
-          setScreen({ kind: "home", serverUrl: s.serverUrl, userId: stored.userId, creds: stored, client: handle.client });
+          setScreen({ kind: "home", serverUrl: s.serverUrl, userId: stored.userId, creds: stored, client: handle.client, handle });
           return;
         }
         // Token rejected — clear and force login
@@ -73,6 +77,7 @@ export function AppState() {
               client: handle.client,
               password,
               creds,
+              handle,
             });
           }}
         />
@@ -90,6 +95,7 @@ export function AppState() {
               userId: screen.creds.userId,
               creds: screen.creds,
               client: screen.client,
+              handle: screen.handle,
             })
           }
           onNeedsExistingRecovery={() =>
@@ -97,6 +103,7 @@ export function AppState() {
               kind: "restore-from-recovery",
               client: screen.client,
               creds: screen.creds,
+              handle: screen.handle,
             })
           }
         />
@@ -113,22 +120,40 @@ export function AppState() {
               userId: screen.creds.userId,
               creds: screen.creds,
               client: screen.client,
+              handle: screen.handle,
             })
           }
         />
       );
 
-    case "home":
-      return <HomeShell client={screen.client} userId={screen.userId} />;
+    case "home": {
+      return (
+        <HomeShellWithVerification
+          client={screen.client}
+          userId={screen.userId}
+          handle={screen.handle}
+          serverUrl={screen.serverUrl}
+          setScreen={setScreen}
+        />
+      );
+    }
   }
 }
 
-interface HomeShellProps {
+interface HomeShellWithVerificationProps {
   client: MatrixClient;
   userId: string;
+  handle: ClientHandle;
+  serverUrl: string;
+  setScreen: (screen: Screen) => void;
 }
 
-function HomeShell({ client, userId }: HomeShellProps) {
+function HomeShellWithVerification({
+  client,
+  handle,
+  serverUrl,
+  setScreen,
+}: HomeShellWithVerificationProps) {
   const [pendingVerification, setPendingVerification] =
     useState<VerificationRequest | null>(null);
 
@@ -139,9 +164,16 @@ function HomeShell({ client, userId }: HomeShellProps) {
     return unsubscribe;
   }, [client]);
 
+  async function handleLogout() {
+    await handle.shutdown();
+    await window.hailfreq.invoke("tokens:clear");
+    await window.hailfreq.invoke("settings:set", { userId: "", lastLoginMethod: "" });
+    setScreen({ kind: "login", serverUrl });
+  }
+
   return (
     <>
-      <CenteredMessage>Logged in as {userId} (Home shell — Task 20)</CenteredMessage>
+      <Home client={client} onLogout={handleLogout} />
       {pendingVerification !== null && (
         <EmojiVerification
           request={pendingVerification}
