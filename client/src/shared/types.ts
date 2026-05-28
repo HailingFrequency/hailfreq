@@ -12,6 +12,16 @@ export interface NetPreferences {
   voiceThresholds: Record<string, number>;
   /** Matrix room IDs of nets the user has opted to monitor. */
   monitored: string[];
+  /**
+   * Per-net outbound chirp ID (played locally when the user starts PTT).
+   * Defaults to "builtin:click" when absent.
+   */
+  outboundChirps: Record<string, string>;
+  /**
+   * Per-net inbound chirp ID (played when a remote participant starts transmitting,
+   * debounced at 2 s). Defaults to "builtin:classic-two-tone" when absent.
+   */
+  inboundChirps: Record<string, string>;
 }
 
 export interface ServerEntry {

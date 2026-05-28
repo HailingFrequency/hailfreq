@@ -1,6 +1,9 @@
 import { app, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { ChirpSummary } from "../shared/ipc";
+
+export type { ChirpSummary };
 
 const CHIRP_EXTENSIONS = new Set([".wav", ".mp3", ".ogg", ".flac"]);
 const MAX_CHIRP_BYTES = 5 * 1024 * 1024;
@@ -11,12 +14,6 @@ const BUILTIN_CHIRPS = [
   { id: "builtin:click", name: "Short radio click", file: "click.wav" },
   { id: "builtin:none", name: "None", file: "" },
 ];
-
-export interface ChirpSummary {
-  id: string;
-  name: string;
-  source: "builtin" | "custom";
-}
 
 export async function ensureChirpFolder(): Promise<string> {
   const folder = path.join(app.getPath("userData"), "chirps");

@@ -1,7 +1,10 @@
 import type { Settings, ServerEntry } from "./types";
-import type { ChirpSummary } from "../main/chirps";
 
-export type { ChirpSummary };
+export interface ChirpSummary {
+  id: string;
+  name: string;
+  source: "builtin" | "custom";
+}
 
 export interface StoredCredentials {
   userId: string;
