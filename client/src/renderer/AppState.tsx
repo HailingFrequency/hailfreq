@@ -1,11 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { FirstRun } from "./screens/FirstRun";
+import { Login } from "./screens/Login";
+import type { Credentials } from "./matrix/types";
 
 type Screen =
   | { kind: "loading" }
   | { kind: "first-run" }
   | { kind: "login"; serverUrl: string }
-  | { kind: "home"; serverUrl: string; userId: string };
+  | { kind: "home"; serverUrl: string; userId: string; creds: Credentials };
 
 export function AppState() {
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
@@ -30,12 +32,15 @@ export function AppState() {
       return <FirstRun onConfigured={(url) => setScreen({ kind: "login", serverUrl: url })} />;
     case "login":
       return (
-        <CenteredMessage>
-          Login screen for {screen.serverUrl} (wired in Task 9)
-        </CenteredMessage>
+        <Login
+          serverUrl={screen.serverUrl}
+          onLoggedIn={(creds) =>
+            setScreen({ kind: "home", serverUrl: screen.serverUrl, userId: creds.userId, creds })
+          }
+        />
       );
     case "home":
-      return <CenteredMessage>Home shell for {screen.userId} (wired in Task 20)</CenteredMessage>;
+      return <CenteredMessage>Logged in as {screen.userId} (Home shell — Task 20)</CenteredMessage>;
   }
 }
 
