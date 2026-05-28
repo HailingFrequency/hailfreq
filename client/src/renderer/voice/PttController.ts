@@ -17,6 +17,7 @@ export class PttController {
   private readonly engine: VoiceEngine;
   private bindings = new Map<string, PttBinding>(); // matrixRoomId → binding
   private unsubscribeHotkeyListener: (() => void) | null = null;
+  private unsubscribeNativeListener: (() => void) | null = null;
   /** Currently transmitting net (single, since only one net at a time can be active). */
   private transmitting: string | null = null;
 
@@ -26,10 +27,16 @@ export class PttController {
       const binding = Array.from(this.bindings.values()).find((b) => b.hotkeyId === event.id);
       if (!binding) return;
       // Tap-to-toggle is the only mode wired in this task.
-      // Press-and-hold (Task 10B) and voice activation (Task 10C) extend this.
+      // Voice activation (Task 10C) extends this.
       if (binding.mode === "toggle") {
         void this.togglePtt(binding.matrixRoomId);
       }
+    });
+    this.unsubscribeNativeListener = window.hailfreq.onNativeHotkey((event) => {
+      const binding = Array.from(this.bindings.values()).find((b) => b.hotkeyId === event.id);
+      if (!binding || binding.mode !== "hold") return;
+      if (event.direction === "down") void this.holdStart(binding.matrixRoomId);
+      else void this.holdStop(binding.matrixRoomId);
     });
   }
 
@@ -42,9 +49,9 @@ export class PttController {
   }): Promise<{ ok: boolean; error?: string }> {
     await this.unbind(opts.matrixRoomId);
 
-    if (opts.mode === "toggle" || opts.mode === "hold") {
+    if (opts.mode === "toggle") {
       if (!opts.accelerator) {
-        return { ok: false, error: `${opts.mode} mode requires a keybind` };
+        return { ok: false, error: "toggle mode requires a keybind" };
       }
       const result = await window.hailfreq.invoke("hotkeys:register", {
         accelerator: opts.accelerator,
@@ -54,6 +61,24 @@ export class PttController {
       this.bindings.set(opts.matrixRoomId, {
         matrixRoomId: opts.matrixRoomId,
         mode: opts.mode,
+        accelerator: opts.accelerator,
+        hotkeyId: result.id,
+      });
+      return { ok: true };
+    }
+
+    if (opts.mode === "hold") {
+      if (!opts.accelerator) {
+        return { ok: false, error: "hold mode requires a keybind" };
+      }
+      const result = await window.hailfreq.invoke("nativeHotkey:registerHold", {
+        accelerator: opts.accelerator,
+        metadata: { matrixRoomId: opts.matrixRoomId },
+      });
+      if ("error" in result) return { ok: false, error: result.error };
+      this.bindings.set(opts.matrixRoomId, {
+        matrixRoomId: opts.matrixRoomId,
+        mode: "hold",
         accelerator: opts.accelerator,
         hotkeyId: result.id,
       });
@@ -77,7 +102,11 @@ export class PttController {
     const existing = this.bindings.get(matrixRoomId);
     if (!existing) return;
     if (existing.hotkeyId) {
-      await window.hailfreq.invoke("hotkeys:unregister", { id: existing.hotkeyId });
+      if (existing.mode === "hold") {
+        await window.hailfreq.invoke("nativeHotkey:unregisterHold", { id: existing.hotkeyId });
+      } else {
+        await window.hailfreq.invoke("hotkeys:unregister", { id: existing.hotkeyId });
+      }
     }
     this.bindings.delete(matrixRoomId);
     if (this.transmitting === matrixRoomId) {
@@ -121,11 +150,17 @@ export class PttController {
   async shutdown(): Promise<void> {
     for (const binding of this.bindings.values()) {
       if (binding.hotkeyId) {
-        await window.hailfreq.invoke("hotkeys:unregister", { id: binding.hotkeyId });
+        if (binding.mode === "hold") {
+          await window.hailfreq.invoke("nativeHotkey:unregisterHold", { id: binding.hotkeyId });
+        } else {
+          await window.hailfreq.invoke("hotkeys:unregister", { id: binding.hotkeyId });
+        }
       }
     }
     this.bindings.clear();
     this.unsubscribeHotkeyListener?.();
     this.unsubscribeHotkeyListener = null;
+    this.unsubscribeNativeListener?.();
+    this.unsubscribeNativeListener = null;
   }
 }

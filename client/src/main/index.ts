@@ -3,6 +3,7 @@ import { createMainWindow } from "./window";
 import { registerIpcHandlers } from "./ipc";
 import { settings } from "./store";
 import { migrateLegacyCredentials } from "./tokens";
+import { unregisterAllHolds } from "./nativeKeyListener";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -26,6 +27,10 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("will-quit", () => {
+  unregisterAllHolds();
 });
 
 // Prevent navigation to arbitrary URLs (defense in depth)

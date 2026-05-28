@@ -3,6 +3,7 @@ import { settings, addServer, removeServer, setActiveServer, updateServer } from
 import { saveCredentials, loadCredentials, clearCredentials, migrateLegacyCredentials } from "./tokens";
 import { runSsoFlow } from "./oidc";
 import { registerHotkey, unregisterHotkey, listHotkeys } from "./globalHotkeys";
+import { registerHold, unregisterHold } from "./nativeKeyListener";
 import type { Settings, ServerEntry } from "../shared/types";
 import type { StoredCredentials } from "../shared/ipc";
 
@@ -46,4 +47,13 @@ export function registerIpcHandlers(): void {
   );
   ipcMain.handle("hotkeys:unregister", (_event, args: { id: string }) => unregisterHotkey(args.id));
   ipcMain.handle("hotkeys:list", () => listHotkeys());
+
+  ipcMain.handle(
+    "nativeHotkey:registerHold",
+    (_event, args: { accelerator: string; metadata: unknown }) =>
+      registerHold(args.accelerator, args.metadata),
+  );
+  ipcMain.handle("nativeHotkey:unregisterHold", (_event, args: { id: string }) =>
+    unregisterHold(args.id),
+  );
 }

@@ -32,6 +32,9 @@ declare global {
         ...args: IpcChannels[K]["args"]
       ) => Promise<IpcChannels[K]["result"]>;
       onHotkey: (cb: (e: { id: string; accelerator: string }) => void) => () => void;
+      onNativeHotkey: (
+        cb: (e: { id: string; accelerator: string; direction: "down" | "up" }) => void,
+      ) => () => void;
     };
   }
 }
