@@ -31,6 +31,7 @@ export function EncryptionSetup({
 }: EncryptionSetupProps) {
   const [state, setState] = useState<State>({ kind: "checking" });
   const [confirmed, setConfirmed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     void (async () => {
@@ -75,8 +76,7 @@ export function EncryptionSetup({
         });
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [client, password, retryCount]);
 
   // When in needs-existing-recovery state, delegate to parent immediately
   useEffect(() => {
@@ -101,7 +101,10 @@ export function EncryptionSetup({
           <p className="text-sm text-slate-300">{state.error}</p>
           <Button
             variant="ghost"
-            onClick={() => setState({ kind: "checking" })}
+            onClick={() => {
+              setRetryCount((n) => n + 1);
+              setState({ kind: "checking" });
+            }}
           >
             Retry
           </Button>
