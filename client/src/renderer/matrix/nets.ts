@@ -1,0 +1,132 @@
+import type { MatrixClient } from "matrix-js-sdk";
+
+export interface NetProperties {
+  priority: number; // 0-100
+  name: string;
+  color: string; // CSS color or short identifier
+}
+
+export interface NetSummary {
+  matrixRoomId: string;
+  liveKitRoomName: string; // derived: the UUID localpart
+  properties: NetProperties;
+  memberCount: number;
+  myPowerLevel: number;
+}
+
+const NET_PRIORITY_EVENT = "org.hailfreq.net.priority";
+const NET_NAME_EVENT = "org.hailfreq.net.name";
+const NET_COLOR_EVENT = "org.hailfreq.net.color";
+
+/**
+ * Derive the LiveKit room name from a Matrix room ID.
+ * `!a1b2c3:server.com` → `a1b2c3`.
+ */
+export function liveKitRoomFromMatrixId(matrixRoomId: string): string {
+  const colonIdx = matrixRoomId.indexOf(":");
+  if (colonIdx <= 0) return matrixRoomId.substring(1);
+  return matrixRoomId.substring(1, colonIdx);
+}
+
+/**
+ * List all "voice net" rooms the client is a member of.
+ * A room is considered a voice net if it has the `org.hailfreq.net.priority` state event.
+ */
+export function listNets(client: MatrixClient): NetSummary[] {
+  const rooms = client.getRooms();
+  const nets: NetSummary[] = [];
+  for (const room of rooms) {
+    const priorityEv = room.currentState.getStateEvents(NET_PRIORITY_EVENT, "");
+    if (!priorityEv) continue;
+    const nameEv = room.currentState.getStateEvents(NET_NAME_EVENT, "");
+    const colorEv = room.currentState.getStateEvents(NET_COLOR_EVENT, "");
+    const props: NetProperties = {
+      priority: Number(priorityEv.getContent().value ?? 0),
+      name: String(nameEv?.getContent().value ?? room.name ?? "Net"),
+      color: String(colorEv?.getContent().value ?? "#22d3ee"),
+    };
+    nets.push({
+      matrixRoomId: room.roomId,
+      liveKitRoomName: liveKitRoomFromMatrixId(room.roomId),
+      properties: props,
+      memberCount: room.getJoinedMemberCount(),
+      myPowerLevel: room.getMember(client.getSafeUserId())?.powerLevel ?? 0,
+    });
+  }
+  // Sort by priority descending (highest priority first)
+  nets.sort((a, b) => b.properties.priority - a.properties.priority);
+  return nets;
+}
+
+/**
+ * Create a new voice net (Matrix room with the required state events).
+ * Caller must have permission on the parent space/server to create rooms.
+ * Returns the new room ID.
+ */
+export async function createNet(
+  client: MatrixClient,
+  props: NetProperties,
+): Promise<string> {
+  const create = await client.createRoom({
+    preset: "private_chat" as any,
+    name: props.name,
+    initial_state: [
+      {
+        type: "m.room.encryption",
+        state_key: "",
+        content: { algorithm: "m.megolm.v1.aes-sha2" },
+      },
+      {
+        type: NET_PRIORITY_EVENT,
+        state_key: "",
+        content: { value: props.priority },
+      },
+      {
+        type: NET_NAME_EVENT,
+        state_key: "",
+        content: { value: props.name },
+      },
+      {
+        type: NET_COLOR_EVENT,
+        state_key: "",
+        content: { value: props.color },
+      },
+    ],
+  });
+  return create.room_id;
+}
+
+/** Update one or more net properties. Caller must have PL 100 in the room. */
+export async function updateNetProperties(
+  client: MatrixClient,
+  matrixRoomId: string,
+  patch: Partial<NetProperties>,
+): Promise<void> {
+  if (patch.priority !== undefined) {
+    await client.sendStateEvent(matrixRoomId, NET_PRIORITY_EVENT as any, { value: patch.priority }, "");
+  }
+  if (patch.name !== undefined) {
+    await client.sendStateEvent(matrixRoomId, NET_NAME_EVENT as any, { value: patch.name }, "");
+  }
+  if (patch.color !== undefined) {
+    await client.sendStateEvent(matrixRoomId, NET_COLOR_EVENT as any, { value: patch.color }, "");
+  }
+}
+
+/** Subscribe to net membership/property changes; returns unsubscribe function. */
+export function subscribeToNetsChanges(
+  client: MatrixClient,
+  onChange: () => void,
+): () => void {
+  const handler = () => onChange();
+  client.on("Room" as any, handler);
+  client.on("Room.name" as any, handler);
+  client.on("RoomState.events" as any, handler);
+  client.on("RoomMember.membership" as any, handler);
+  return () => {
+    client.off("Room" as any, handler);
+    client.off("Room.name" as any, handler);
+    client.off("RoomState.events" as any, handler);
+    client.off("RoomMember.membership" as any, handler);
+  };
+}
