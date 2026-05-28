@@ -6,7 +6,7 @@ import type { Credentials } from "../matrix/types";
 
 interface LoginProps {
   serverUrl: string;
-  onLoggedIn: (creds: Credentials) => void;
+  onLoggedIn: (creds: Credentials, password: string | null) => void;
 }
 
 type Flows = {
@@ -39,7 +39,7 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
         userId: creds.userId,
         lastLoginMethod: "local",
       });
-      onLoggedIn(creds);
+      onLoggedIn(creds, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -84,7 +84,7 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
       });
 
       setError(null);
-      onLoggedIn(creds);
+      onLoggedIn(creds, null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "CitizenID login failed");
     } finally {
