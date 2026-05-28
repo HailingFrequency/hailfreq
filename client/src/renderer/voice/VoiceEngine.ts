@@ -1,6 +1,8 @@
 import { NetConnection } from "./NetConnection";
 import { fetchLiveKitToken, authBaseUrlFromHomeserver } from "./auth";
+import { startKeyRotationCoordinator, type RotationHandle } from "./keyRotationCoordinator";
 import type { MatrixClient } from "matrix-js-sdk";
+import { ExternalE2EEKeyProvider } from "livekit-client";
 import type { RemoteAudioTrack, RemoteParticipant } from "livekit-client";
 
 interface NetState {
@@ -41,10 +43,32 @@ export class VoiceEngine {
   private micSourceNode: MediaStreamAudioSourceNode | null = null;
   /** Hangover timer for priority ducking. */
   private duckHangoverTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Handle to unsubscribe the SFrame key-rotation coordinator on shutdown. */
+  private rotationHandle: RotationHandle | null = null;
 
   constructor(client: MatrixClient) {
     this.client = client;
     this.authBaseUrl = authBaseUrlFromHomeserver(client.getHomeserverUrl());
+    this.rotationHandle = startKeyRotationCoordinator(
+      this.client,
+      () => new Set(this.nets.keys()),
+      {
+        onNewKey: (roomId, keyBytes, _keyIndex) => {
+          const state = this.nets.get(roomId);
+          if (!state) return;
+          const e2ee = state.connection.rawRoom.options.e2ee;
+          // Guard: e2ee config is wired in Task 12. Skip if not yet configured.
+          // Narrow the E2EEOptions union to the variant that carries keyProvider.
+          if (!e2ee || !("keyProvider" in e2ee)) return;
+          const provider = e2ee.keyProvider;
+          if (provider instanceof ExternalE2EEKeyProvider) {
+            // ExternalE2EEKeyProvider.setKey accepts ArrayBuffer (HKDF path).
+            // keyIndex is managed internally by LiveKit via ratchet slots.
+            void provider.setKey(keyBytes.buffer as ArrayBuffer);
+          }
+        },
+      },
+    );
   }
 
   on<E extends keyof VoiceEngineEvents>(event: E, handler: VoiceEngineEvents[E]): this {
@@ -192,6 +216,8 @@ export class VoiceEngine {
   }
 
   async shutdown(): Promise<void> {
+    this.rotationHandle?.unsubscribe();
+    this.rotationHandle = null;
     await this.stopPtt();
     for (const id of Array.from(this.nets.keys())) {
       await this.unmonitorNet(id);

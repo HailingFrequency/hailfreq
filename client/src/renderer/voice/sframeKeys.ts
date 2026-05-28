@@ -66,6 +66,54 @@ export async function fetchSframeKey(
   return null;
 }
 
+/**
+ * Return all SFrame keys ever published in this room, ordered oldest → newest.
+ * Each entry is { keyIndex, keyBytes, eventId, ts }. keyIndex is `position % 16`.
+ */
+export async function listSframeKeys(
+  client: MatrixClient,
+  matrixRoomId: string,
+): Promise<Array<{ keyIndex: number; keyBytes: Uint8Array; eventId: string; ts: number }>> {
+  const room = client.getRoom(matrixRoomId);
+  if (!room) return [];
+  const out: Array<{ keyIndex: number; keyBytes: Uint8Array; eventId: string; ts: number }> = [];
+  const events = room.getLiveTimeline().getEvents();
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.getType() !== SFRAME_KEY_EVENT) continue;
+    if (ev.isBeingDecrypted()) await new Promise<void>((r) => setTimeout(r, 50));
+    const content = ev.getContent();
+    if (typeof content.key !== "string") continue;
+    out.push({
+      keyIndex: out.length % 16,
+      keyBytes: base64Decode(content.key),
+      eventId: ev.getId() ?? "",
+      ts: ev.getTs(),
+    });
+  }
+  return out;
+}
+
+/**
+ * Upload a fresh key as a rotation. Returns the new key bytes and its assigned
+ * 4-bit index (to pass to LiveKit's ExternalE2EEKeyProvider.setKey).
+ *
+ * Race safety: multiple eligible members may call this simultaneously after a
+ * kick. Each upload succeeds independently; all members will observe all new
+ * key events and apply the latest one. LiveKit handles overlapping key indices
+ * by keeping the most-recently-applied value for each slot.
+ */
+export async function rotateSframeKey(
+  client: MatrixClient,
+  matrixRoomId: string,
+): Promise<{ keyBytes: Uint8Array; keyIndex: number }> {
+  const existing = await listSframeKeys(client, matrixRoomId);
+  const keyBytes = generateSframeKey();
+  await uploadSframeKey(client, matrixRoomId, keyBytes);
+  // The new key occupies position `existing.length`, so index is existing.length % 16.
+  return { keyBytes, keyIndex: existing.length % 16 };
+}
+
 function base64Encode(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
 }
