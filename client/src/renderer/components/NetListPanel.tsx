@@ -9,6 +9,7 @@ import { PttController, type PttMode } from "../voice/PttController";
 interface NetListPanelProps {
   client: MatrixClient;
   serverEntry: ServerEntry;
+  onTransmittingChange: (net: string | null) => void;
 }
 
 interface PerNetUiState {
@@ -67,7 +68,7 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
   return prefs;
 }
 
-export function NetListPanel({ client, serverEntry }: NetListPanelProps) {
+export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetListPanelProps) {
   const [nets, setNets] = useState<NetSummary[]>([]);
   const [uiState, setUiState] = useState<Map<string, PerNetUiState>>(new Map());
   const [engine] = useState(() => new VoiceEngine(client));
@@ -124,6 +125,14 @@ export function NetListPanel({ client, serverEntry }: NetListPanelProps) {
       });
     });
   }, [engine]);
+
+  // Wire PTT state changed events from voice engine
+  useEffect(() => {
+    engine.on("pttStateChanged", (matrixRoomId) => {
+      setTransmitting(matrixRoomId);
+      onTransmittingChange(matrixRoomId);
+    });
+  }, [engine, onTransmittingChange]);
 
   // Poll PTT transmitting state (cheap, runs only when ptt reference changes)
   useEffect(() => {

@@ -6,6 +6,7 @@ import { ServerContextMenu } from "./ServerContextMenu";
 export interface SidebarServerItem {
   entry: ServerEntry;
   unreadCount: number;
+  transmitting: boolean;
 }
 
 interface SidebarProps {
@@ -23,7 +24,7 @@ export function Sidebar({ servers, activeServerId, onSelect, onAddClicked, onRem
   return (
     <>
       <aside className="flex w-20 flex-col items-center gap-3 border-r border-slate-800 bg-slate-950 py-4">
-        {servers.map(({ entry, unreadCount }) => (
+        {servers.map(({ entry, unreadCount, transmitting }) => (
           <ServerIcon
             key={entry.id}
             server={entry}
@@ -31,6 +32,7 @@ export function Sidebar({ servers, activeServerId, onSelect, onAddClicked, onRem
             onClick={() => onSelect(entry.id)}
             onContextMenu={() => setContextMenuFor(entry)}
             unreadCount={unreadCount}
+            transmitting={transmitting}
           />
         ))}
         <button

@@ -9,9 +9,10 @@ interface HomeProps {
   client: MatrixClient;
   onLogout: () => Promise<void> | void;
   serverEntry: ServerEntry;
+  onTransmittingChange: (net: string | null) => void;
 }
 
-export function Home({ client, onLogout, serverEntry }: HomeProps) {
+export function Home({ client, onLogout, serverEntry, onTransmittingChange }: HomeProps) {
   const [creating, setCreating] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -40,7 +41,7 @@ export function Home({ client, onLogout, serverEntry }: HomeProps) {
       </header>
 
       <div className="flex-1 overflow-auto">
-        <NetListPanel client={client} serverEntry={serverEntry} />
+        <NetListPanel client={client} serverEntry={serverEntry} onTransmittingChange={onTransmittingChange} />
       </div>
 
       {creating && (

@@ -25,6 +25,7 @@ interface NetState {
 export interface VoiceEngineEvents {
   netStateChanged: (matrixRoomId: string, state: "connecting" | "connected" | "reconnecting" | "disconnected") => void;
   activeSpeakersChanged: (matrixRoomId: string, identities: string[]) => void;
+  pttStateChanged: (matrixRoomId: string | null) => void;
 }
 
 const DUCK_ATTENUATION_DB = -35; // matches Star Comms default
@@ -190,6 +191,7 @@ export class VoiceEngine {
     const [micTrack] = this.micStream.getAudioTracks();
     await state.connection.startMicPublishing(micTrack.clone());
     this.activePttNet = matrixRoomId;
+    this.listeners.pttStateChanged?.(matrixRoomId);
   }
 
   /** Release PTT — stop transmitting. */
@@ -198,6 +200,7 @@ export class VoiceEngine {
     const state = this.nets.get(this.activePttNet);
     if (state) await state.connection.stopMicPublishing();
     this.activePttNet = null;
+    this.listeners.pttStateChanged?.(null);
   }
 
   /**
