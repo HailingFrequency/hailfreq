@@ -21,6 +21,11 @@ After Plan 2, this client supports:
 - Admin / squad-leader board (Plan 5): create, rename, recolor, and delete nets; invite and remove members; promote to squad leader / demote; disconnect operators from voice; ban accounts from the server
 - Full roster view across all visible nets with online-status indicators and RSI-verified badges
 - Net properties editor (priority, color, name) accessible from the admin board
+- Radio chirps on PTT (built-in tones + custom files from `userData/chirps/`)
+- QR code device verification (alongside SAS emoji)
+- Drag-to-reorder server sidebar
+- System tray with minimize-to-tray
+- OS-level desktop notifications (per-server toggle)
 
 ## Quick start
 
