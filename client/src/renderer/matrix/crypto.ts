@@ -1,6 +1,10 @@
 import type { MatrixClient } from "matrix-js-sdk";
 import type { UIAuthCallback } from "matrix-js-sdk/lib/interactive-auth";
-import type { BootstrapCrossSigningOpts } from "matrix-js-sdk/lib/crypto-api";
+import type {
+  BootstrapCrossSigningOpts,
+  GeneratedSecretStorageKey,
+} from "matrix-js-sdk/lib/crypto-api";
+import { encodeRecoveryKey } from "./recoveryKey";
 
 /**
  * Returns true if the account has cross-signing master keys published on the
@@ -80,4 +84,69 @@ export async function bootstrapCrossSigning(
   };
 
   await crypto.bootstrapCrossSigning(opts);
+}
+
+/**
+ * Bootstrap SSSS (Secret Storage and Sharing) with a freshly-generated
+ * 32-byte recovery key, and return that key in the human-readable Matrix
+ * encoded format.
+ *
+ * The SDK calls the `createSecretStorageKey` callback to obtain fresh key
+ * material. We intercept the callback to capture both the raw bytes and
+ * the SDK's own `encodedPrivateKey` field (which may already carry the
+ * formatted string). If `encodedPrivateKey` is absent we re-encode from
+ * `privateKey` ourselves using the same base58+parity scheme.
+ *
+ * `setupNewSecretStorage: true` forces generation of a new key even if one
+ * already exists in account data. Remove that flag if you only want to
+ * bootstrap when no secret storage key is present yet.
+ */
+export async function bootstrapSecretStorageWithNewKey(
+  client: MatrixClient,
+): Promise<{ recoveryKey: string }> {
+  const crypto = client.getCrypto();
+  if (!crypto) {
+    throw new Error("Crypto is not initialised on this client");
+  }
+
+  let capturedKey: GeneratedSecretStorageKey | null = null;
+
+  await crypto.bootstrapSecretStorage({
+    setupNewSecretStorage: true,
+    createSecretStorageKey: async (): Promise<GeneratedSecretStorageKey> => {
+      // Generate 32 cryptographically random bytes for the key.
+      const privateKey = new Uint8Array(32);
+      globalThis.crypto.getRandomValues(privateKey);
+
+      const encodedPrivateKey = encodeRecoveryKey(privateKey);
+
+      const generated: GeneratedSecretStorageKey = {
+        privateKey,
+        encodedPrivateKey,
+        keyInfo: {},
+      };
+
+      capturedKey = generated;
+      return generated;
+    },
+  });
+
+  if (!capturedKey) {
+    throw new Error(
+      "bootstrapSecretStorage completed but createSecretStorageKey was never called — " +
+        "secret storage may have already been set up with an existing key",
+    );
+  }
+
+  const key = capturedKey as GeneratedSecretStorageKey;
+  const recoveryKey =
+    key.encodedPrivateKey ?? encodeRecoveryKey(key.privateKey);
+
+  if (!recoveryKey) {
+    throw new Error(
+      "Failed to encode recovery key: encodeRecoveryKey returned undefined",
+    );
+  }
+
+  return { recoveryKey };
 }
