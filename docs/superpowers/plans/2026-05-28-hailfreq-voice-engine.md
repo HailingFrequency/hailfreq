@@ -1866,7 +1866,7 @@ A banned user is fully cut off the instant the admin runs the ban action. The st
 - BUT: if they captured ciphertext while they were a legitimate member, they can still decrypt that historical traffic with the cached key
 - AND: until their JWT expires, they could in theory still send/receive on that LiveKit room
 
-v1.5 will add **active key rotation on membership change** — when an admin kicks a member, the remaining members rotate the SFrame key and the kicked member's cached key becomes useless for any traffic after the rotation (Megolm-style forward secrecy ratchet). For v1, the realistic mitigation is: admins should use server-level ban for adversarial removals, not net-level kick.
+**Active key rotation on net-level kicks is implemented in Task 11B.** When an admin kicks a member, the remaining members generate a fresh SFrame key, upload it as an encrypted timeline event, and rotate LiveKit's keyProvider. The kicked member's cached key becomes useless for any traffic after the rotation. Combined with server-level ban for adversarial removals, this closes the forward-secrecy gap that would otherwise exist with static keys.
 
 - [ ] **Step 1: Write `client/src/renderer/voice/sframeKeys.ts`**
 
@@ -1966,6 +1966,188 @@ npm run build 2>&1 | tail -5
 cd /home/shreen/code/tactical-radio
 git add client/src/renderer/voice/sframeKeys.ts
 git commit -m "client: SFrame key generation + Matrix-encrypted-timeline storage"
+```
+
+---
+
+## Task 11B: Active SFrame key rotation on net-level kicks
+
+**Files:**
+- Modify: `client/src/renderer/voice/sframeKeys.ts` (add key-index awareness + rotation helper)
+- Create: `client/src/renderer/voice/keyRotationCoordinator.ts`
+- Modify: `client/src/renderer/voice/VoiceEngine.ts` (wire rotation per net)
+
+When an admin kicks (or bans) a member from a net's Matrix room, the remaining members generate a fresh SFrame key and rotate it into LiveKit. The kicked member's cached key becomes useless for any traffic after the rotation. This closes the forward-secrecy gap from Task 11's static-key v1 model.
+
+### Design
+
+- **Rotation trigger:** any `RoomMember.membership` event where `prev_content.membership === "join"` and new `content.membership === "leave"` OR `"ban"`, AND `sender !== state_key` (i.e., kicked/banned by someone else, not voluntary leave).
+- **Coordinator selection:** every online member with PL ≥ 50 (speak permission) attempts to upload a new key. Matrix's timeline ordering decides which wins; benign race. No explicit lock needed.
+- **Key index:** count the existing `org.hailfreq.net.sframe-key` timeline events; new key gets `(count) % 16`. LiveKit's `ExternalE2EEKeyProvider.setKey(key, keyIndex)` accepts a 4-bit index. Senders use the new index for outgoing frames; receivers try the new index first, fall back to older indexes for in-flight frames (LiveKit handles this internally).
+- **Consume side:** all members listen for new `org.hailfreq.net.sframe-key` events on the timeline. On receipt, extract bytes + compute index, call `setKey()` on the LiveKit room's keyProvider.
+- **Offline members:** catch up on next sync. During the offline window they have the previous key cached and can still receive older traffic.
+
+### Files
+
+- [ ] **Step 1: Extend `client/src/renderer/voice/sframeKeys.ts`**
+
+Add helpers for retrieving key history and rotating:
+
+```ts
+/**
+ * Return all SFrame keys ever published in this room, ordered oldest → newest.
+ * Each entry is { keyIndex, keyBytes, eventId }. keyIndex is `index % 16`.
+ */
+export async function listSframeKeys(
+  client: MatrixClient,
+  matrixRoomId: string,
+): Promise<Array<{ keyIndex: number; keyBytes: Uint8Array; eventId: string; ts: number }>> {
+  const room = client.getRoom(matrixRoomId);
+  if (!room) return [];
+  const out: Array<{ keyIndex: number; keyBytes: Uint8Array; eventId: string; ts: number }> = [];
+  const events = room.getLiveTimeline().getEvents();
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.getType() !== SFRAME_KEY_EVENT) continue;
+    if (ev.isBeingDecrypted()) await new Promise<void>((r) => setTimeout(r, 50));
+    const content = ev.getContent();
+    if (typeof content.key !== "string") continue;
+    out.push({
+      keyIndex: out.length % 16,
+      keyBytes: base64Decode(content.key),
+      eventId: ev.getId() || "",
+      ts: ev.getTs(),
+    });
+  }
+  return out;
+}
+
+/** Upload a fresh key as a rotation. Returns the new key bytes + assigned index. */
+export async function rotateSframeKey(
+  client: MatrixClient,
+  matrixRoomId: string,
+): Promise<{ keyBytes: Uint8Array; keyIndex: number }> {
+  const existing = await listSframeKeys(client, matrixRoomId);
+  const keyBytes = generateSframeKey();
+  await uploadSframeKey(client, matrixRoomId, keyBytes);
+  return { keyBytes, keyIndex: existing.length % 16 };
+}
+```
+
+- [ ] **Step 2: Write `client/src/renderer/voice/keyRotationCoordinator.ts`**
+
+```ts
+import type { MatrixClient, MatrixEvent, RoomMember } from "matrix-js-sdk";
+import { rotateSframeKey, listSframeKeys } from "./sframeKeys";
+
+interface RotationHandle {
+  unsubscribe(): void;
+}
+
+interface CoordinatorEvents {
+  /** Called whenever a new SFrame key is observed (own rotation OR remote rotation). */
+  onNewKey: (matrixRoomId: string, keyBytes: Uint8Array, keyIndex: number) => void;
+}
+
+/**
+ * Listen for kicks/bans on every voice-net Matrix room and trigger rotation.
+ * Also propagates remote rotation events to the caller for LiveKit key updates.
+ */
+export function startKeyRotationCoordinator(
+  client: MatrixClient,
+  netMatrixRoomIds: () => Set<string>,
+  events: CoordinatorEvents,
+): RotationHandle {
+  const handler = async (event: MatrixEvent, member: RoomMember) => {
+    if (event.getType() !== "m.room.member") return;
+    const roomId = event.getRoomId();
+    if (!roomId || !netMatrixRoomIds().has(roomId)) return;
+
+    const prev = event.getPrevContent()?.membership;
+    const next = event.getContent()?.membership;
+    const sender = event.getSender();
+    const target = event.getStateKey();
+
+    // Detect kick or ban (forced removal by someone else)
+    if (prev === "join" && (next === "leave" || next === "ban") && sender && target && sender !== target) {
+      const room = client.getRoom(roomId);
+      if (!room) return;
+      const myPl = room.getMember(client.getSafeUserId())?.powerLevel ?? 0;
+      if (myPl < 50) return; // only speakers participate in rotation
+
+      try {
+        const { keyBytes, keyIndex } = await rotateSframeKey(client, roomId);
+        events.onNewKey(roomId, keyBytes, keyIndex);
+      } catch (err) {
+        console.error(`Key rotation failed for ${roomId}:`, err);
+      }
+    }
+  };
+
+  client.on("RoomMember.membership" as any, handler);
+
+  // Also listen for incoming key events from other members (remote rotations)
+  const timelineHandler = async (event: MatrixEvent) => {
+    if (event.getType() !== "org.hailfreq.net.sframe-key") return;
+    const roomId = event.getRoomId();
+    if (!roomId || !netMatrixRoomIds().has(roomId)) return;
+    if (event.getSender() === client.getSafeUserId()) return; // own event, already applied
+    if (event.isBeingDecrypted()) await new Promise<void>((r) => setTimeout(r, 100));
+    const all = await listSframeKeys(client, roomId);
+    const latest = all[all.length - 1];
+    if (!latest) return;
+    events.onNewKey(roomId, latest.keyBytes, latest.keyIndex);
+  };
+  client.on("Room.timeline" as any, timelineHandler);
+
+  return {
+    unsubscribe() {
+      client.off("RoomMember.membership" as any, handler);
+      client.off("Room.timeline" as any, timelineHandler);
+    },
+  };
+}
+```
+
+- [ ] **Step 3: Wire into `VoiceEngine`**
+
+```ts
+import { ExternalE2EEKeyProvider } from "livekit-client";
+import { startKeyRotationCoordinator } from "./keyRotationCoordinator";
+
+// In the VoiceEngine constructor:
+this.rotationHandle = startKeyRotationCoordinator(
+  this.client,
+  () => new Set(this.nets.keys()),
+  {
+    onNewKey: (roomId, keyBytes, keyIndex) => {
+      const state = this.nets.get(roomId);
+      if (!state) return;
+      const provider = state.connection.rawRoom.options.e2ee?.keyProvider;
+      if (provider instanceof ExternalE2EEKeyProvider) {
+        void provider.setKey(keyBytes, keyIndex);
+      }
+    },
+  },
+);
+
+// In shutdown():
+this.rotationHandle?.unsubscribe();
+```
+
+- [ ] **Step 4: Verify build**
+
+```bash
+cd /home/shreen/code/tactical-radio/client
+npm run build 2>&1 | tail -5
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /home/shreen/code/tactical-radio
+git add client/src/renderer/voice/sframeKeys.ts client/src/renderer/voice/keyRotationCoordinator.ts client/src/renderer/voice/VoiceEngine.ts
+git commit -m "client: active SFrame key rotation on net-level kicks (forward secrecy)"
 ```
 
 ---
@@ -2961,7 +3143,7 @@ After Task 22, the deliverable is:
 
 **Known v1 limitations (documented elsewhere):**
 - Press-and-hold doesn't work on Wayland Linux (compositor security blocks global key hooks); affected users fall back to tap or voice activation
-- Static per-net SFrame keys with no rotation on net-level kick — kicked members can still decrypt traffic they captured while they were members (standard forward-secrecy compromise). **Server-level ban is fully effective immediately** and is the recommended action for adversarial removals. v1.5 adds active key rotation for net-level kicks.
+- SFrame keys rotate on net-level kicks, but kicked members can still decrypt traffic they captured prior to the rotation (standard forward-secrecy property of Megolm-style ratchets). Server-level ban is fully effective immediately for adversarial removals.
 - Voice operates only on the active server (multi-server voice deferred)
 - No chirps, no focused-app PTT, no screen sharing UI
 
