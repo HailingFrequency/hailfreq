@@ -34,7 +34,7 @@ async function ensureListener(): Promise<boolean> {
   if (isWayland()) return false; // Wayland blocks global key hooks
   try {
     listener = new GlobalKeyboardListener();
-    listener.addListener((event, down) => {
+    await listener.addListener((event, down) => {
       // event.name is the key name (e.g., "F13", "A", "LEFT CTRL"); event.state is "DOWN" or "UP"
       // event.rawKey provides modifier state details across platforms
       const eventModifiers = new Set<string>();
@@ -59,6 +59,8 @@ async function ensureListener(): Promise<boolean> {
     return true;
   } catch (err) {
     console.error("Failed to start native key listener:", err);
+    listener = null;       // reset on failure so next call retries cleanly
+    listenerActive = false;
     return false;
   }
 }
