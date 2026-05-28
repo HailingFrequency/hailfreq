@@ -257,6 +257,43 @@ export function AppState() {
     [],
   );
 
+  const handleRemoveServer = useCallback(
+    async (serverId: string) => {
+      const instance = state.servers.get(serverId);
+      if (!instance) return;
+
+      // Shutdown the client, clear tokens, and call servers:remove
+      await instance.handle?.shutdown();
+      await window.hailfreq.invoke("tokens:clear", { serverId });
+      await window.hailfreq.invoke("servers:remove", { serverId });
+
+      // Update local state: remove server from map
+      setState((s) => {
+        const next = new Map(s.servers);
+        next.delete(serverId);
+
+        // Reassign activeServerId if we just removed the active server
+        let newActiveId = s.activeServerId;
+        if (s.activeServerId === serverId) {
+          const remaining = Array.from(next.values());
+          newActiveId = remaining[0]?.entry.id ?? "";
+        }
+
+        // Transition to no-servers if the map is now empty
+        const newGlobalScreen: AppLevelState["globalScreen"] =
+          next.size === 0 ? { kind: "no-servers" } : { kind: "active" };
+
+        return {
+          ...s,
+          servers: next,
+          activeServerId: newActiveId,
+          globalScreen: newGlobalScreen,
+        };
+      });
+    },
+    [state.servers],
+  );
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -286,6 +323,7 @@ export function AppState() {
         activeServerId={state.activeServerId}
         onSelect={handleSelectServer}
         onAddClicked={handleAddClicked}
+        onRemoveServer={handleRemoveServer}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (

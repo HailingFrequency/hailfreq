@@ -4,13 +4,18 @@ interface ServerIconProps {
   server: ServerEntry;
   active: boolean;
   onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
-export function ServerIcon({ server, active, onClick }: ServerIconProps) {
+export function ServerIcon({ server, active, onClick, onContextMenu }: ServerIconProps) {
   const initial = (server.label.trim()[0] ?? server.serverUrl[0] ?? "?").toUpperCase();
   return (
     <button
       onClick={onClick}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu?.(e);
+      }}
       title={`${server.label} — ${server.serverUrl}`}
       className={`relative flex h-12 w-12 items-center justify-center rounded-lg text-base font-semibold transition-all ${
         active
