@@ -123,7 +123,17 @@ app.post("/kick", async (req: Request, res: Response) => {
     const liveKitRoom = colonIdx > 0 ? matrixRoomId.substring(1, colonIdx) : matrixRoomId.substring(1);
 
     // Kick from LiveKit (chat membership unaffected — Matrix kick is a separate action)
-    await roomService.removeParticipant(liveKitRoom, targetUserId);
+    try {
+      await roomService.removeParticipant(liveKitRoom, targetUserId);
+    } catch (kickErr) {
+      // Treat "participant not found" as idempotent success — operator intent is satisfied
+      // if the participant is already gone (e.g., disconnected before the kick was processed).
+      const msg = String(kickErr instanceof Error ? kickErr.message : kickErr).toLowerCase();
+      if (msg.includes("not found") || msg.includes("no participant")) {
+        return res.json({ ok: true, alreadyGone: true });
+      }
+      throw kickErr;
+    }
 
     return res.json({ ok: true });
   } catch (err) {
