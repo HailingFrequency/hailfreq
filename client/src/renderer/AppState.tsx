@@ -3,6 +3,7 @@ import type { MatrixClient } from "matrix-js-sdk";
 import { FirstRun } from "./screens/FirstRun";
 import { Login } from "./screens/Login";
 import { EncryptionSetup } from "./screens/EncryptionSetup";
+import { RestoreFromRecoveryKey } from "./screens/RestoreFromRecoveryKey";
 import type { Credentials } from "./matrix/types";
 
 type Screen =
@@ -13,6 +14,11 @@ type Screen =
       kind: "encryption-setup";
       client: MatrixClient;
       password: string | null;
+      creds: Credentials;
+    }
+  | {
+      kind: "restore-from-recovery";
+      client: MatrixClient;
       creds: Credentials;
     }
   | { kind: "home"; serverUrl: string; userId: string; creds: Credentials };
@@ -81,8 +87,20 @@ export function AppState() {
             })
           }
           onNeedsExistingRecovery={() =>
-            // Task 17 will wire the restore-from-recovery-key screen here.
-            // For now, navigate to home as a placeholder.
+            setScreen({
+              kind: "restore-from-recovery",
+              client: screen.client,
+              creds: screen.creds,
+            })
+          }
+        />
+      );
+
+    case "restore-from-recovery":
+      return (
+        <RestoreFromRecoveryKey
+          client={screen.client}
+          onRestored={() =>
             setScreen({
               kind: "home",
               serverUrl: screen.creds.homeserverUrl,
