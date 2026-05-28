@@ -1,6 +1,8 @@
 import { app, ipcMain } from "electron";
 import { settings } from "./store";
+import { saveCredentials, loadCredentials, clearCredentials } from "./tokens";
 import type { Settings } from "../shared/types";
+import type { StoredCredentials } from "../shared/ipc";
 
 export function registerIpcHandlers(): void {
   ipcMain.handle("app:version", () => app.getVersion());
@@ -13,4 +15,8 @@ export function registerIpcHandlers(): void {
     }
     return settings.store;
   });
+
+  ipcMain.handle("tokens:save", (_event, creds: StoredCredentials) => saveCredentials(creds));
+  ipcMain.handle("tokens:load", () => loadCredentials());
+  ipcMain.handle("tokens:clear", () => clearCredentials());
 }

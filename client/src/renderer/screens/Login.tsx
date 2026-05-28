@@ -34,6 +34,7 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
     setBusy(true);
     try {
       const creds = await loginWithPassword(serverUrl, username, password);
+      await window.hailfreq.invoke("tokens:save", creds);
       await window.hailfreq.invoke("settings:set", {
         userId: creds.userId,
         lastLoginMethod: "local",
