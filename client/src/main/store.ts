@@ -73,3 +73,48 @@ function deriveLabel(url: string): string {
     return url;
   }
 }
+
+export function addServer(label: string, serverUrl: string): ServerEntry {
+  const id = randomUUID();
+  const entry: ServerEntry = {
+    id,
+    label,
+    serverUrl,
+    userId: "",
+    lastLoginMethod: "",
+    lastSyncedMs: 0,
+  };
+  const servers = settings.get("servers");
+  settings.set("servers", [...servers, entry]);
+  if (!settings.get("activeServerId")) {
+    settings.set("activeServerId", id);
+  }
+  return entry;
+}
+
+export function removeServer(serverId: string): void {
+  const servers = settings.get("servers").filter((s) => s.id !== serverId);
+  settings.set("servers", servers);
+  if (settings.get("activeServerId") === serverId) {
+    settings.set("activeServerId", servers[0]?.id ?? "");
+  }
+}
+
+export function setActiveServer(serverId: string): void {
+  const servers = settings.get("servers");
+  if (!servers.some((s) => s.id === serverId)) {
+    throw new Error(`Unknown server: ${serverId}`);
+  }
+  settings.set("activeServerId", serverId);
+}
+
+export function updateServer(serverId: string, patch: Partial<ServerEntry>): ServerEntry {
+  const servers = settings.get("servers");
+  const idx = servers.findIndex((s) => s.id === serverId);
+  if (idx < 0) throw new Error(`Unknown server: ${serverId}`);
+  const updated: ServerEntry = { ...servers[idx], ...patch, id: servers[idx].id };
+  const next = [...servers];
+  next[idx] = updated;
+  settings.set("servers", next);
+  return updated;
+}
