@@ -157,12 +157,11 @@ export async function bootstrapSecretStorageWithNewKey(
       },
     });
   } finally {
-    // Restore the original callbacks
-    if (prevGetSecretStorageKey === undefined) {
-      delete client.cryptoCallbacks.getSecretStorageKey;
-    } else {
-      client.cryptoCallbacks.getSecretStorageKey = prevGetSecretStorageKey;
-    }
+    // Restore only the cacheSecretStorageKey callback. The getSecretStorageKey
+    // callback must remain installed so that subsequent SSSS operations (e.g.
+    // resetKeyBackup() called by createKeyBackup) can still decrypt SSSS using
+    // the newly-created key. It will continue to fall back to the previous
+    // callback for any key IDs it doesn't recognise.
     if (prevCacheSecretStorageKey === undefined) {
       delete client.cryptoCallbacks.cacheSecretStorageKey;
     } else {
