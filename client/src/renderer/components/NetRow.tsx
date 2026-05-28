@@ -11,6 +11,7 @@ interface NetRowProps {
   transmitting: boolean;
   pttMode: PttMode;
   keybind: string | null;
+  keybindError?: string | null;
   voiceThresholdDb: number;
   onToggleMonitor: () => void;
   onVolumeChange: (volume: number) => void;
@@ -28,6 +29,7 @@ export function NetRow({
   transmitting,
   pttMode,
   keybind,
+  keybindError,
   voiceThresholdDb,
   onToggleMonitor,
   onVolumeChange,
@@ -83,7 +85,12 @@ export function NetRow({
       </select>
 
       {pttMode !== "voice" && (
-        <KeybindCapture value={keybind ?? ""} onChange={onKeybindChange} onClear={onKeybindClear} />
+        <div className="flex flex-col gap-1">
+          <KeybindCapture value={keybind ?? ""} onChange={onKeybindChange} onClear={onKeybindClear} />
+          {keybindError && (
+            <span className="text-xs text-red-400">{keybindError}</span>
+          )}
+        </div>
       )}
       {pttMode === "voice" && (
         <input

@@ -19,6 +19,7 @@ interface PerNetUiState {
   pttMode: PttMode;
   keybind: string | null;
   voiceThresholdDb: number;
+  keybindError: string | null;
 }
 
 function defaultUi(): PerNetUiState {
@@ -29,6 +30,7 @@ function defaultUi(): PerNetUiState {
     pttMode: "toggle",
     keybind: null,
     voiceThresholdDb: -45,
+    keybindError: null,
   };
 }
 
@@ -214,13 +216,18 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
       accelerator: accel,
     });
     if (!result.ok) {
-      alert(`Failed to register keybind: ${result.error}`);
+      setUiState((m) => {
+        const next = new Map(m);
+        const existing = next.get(matrixRoomId) ?? defaultUi();
+        next.set(matrixRoomId, { ...existing, keybindError: result.error ?? "Failed to bind" });
+        return next;
+      });
       return;
     }
     setUiState((m) => {
       const next = new Map(m);
       const existing = next.get(matrixRoomId) ?? defaultUi();
-      next.set(matrixRoomId, { ...existing, keybind: accel });
+      next.set(matrixRoomId, { ...existing, keybind: accel, keybindError: null });
       persistPrefs(next);
       return next;
     });
@@ -278,6 +285,7 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
             transmitting={transmitting === net.matrixRoomId}
             pttMode={ui.pttMode}
             keybind={ui.keybind}
+            keybindError={ui.keybindError}
             voiceThresholdDb={ui.voiceThresholdDb}
             onToggleMonitor={() => void handleToggleMonitor(net)}
             onVolumeChange={(v) => handleVolume(net.matrixRoomId, v)}
