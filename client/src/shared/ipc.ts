@@ -23,6 +23,9 @@ export interface IpcChannels {
   "servers:remove": { args: [{ serverId: string }]; result: void };
   "servers:setActive": { args: [{ serverId: string }]; result: void };
   "servers:update": { args: [{ serverId: string; patch: Partial<ServerEntry> }]; result: ServerEntry };
+  "servers:reorder": { args: [{ orderedIds: string[] }]; result: void };
+  "notify:show": { args: [{ title: string; body: string; serverId?: string }]; result: void };
+  "app:windowFocused": { args: []; result: boolean };
   "tokens:save": { args: [{ serverId: string; credentials: StoredCredentials }]; result: void };
   "tokens:load": { args: [{ serverId: string }]; result: StoredCredentials | null };
   "tokens:clear": { args: [{ serverId: string }]; result: void };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, useCallback } from "react";
 import type { ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
@@ -213,8 +213,12 @@ export function AppState() {
   }, [signedInClients]);
 
   // -------------------------------------------------------------------------
-  // Per-server unread badge subscriptions
+  // Per-server unread badge subscriptions + OS notifications
   // -------------------------------------------------------------------------
+
+  // Per-server notification debounce: track last-notified timestamp per server
+  const lastNotifiedRef = useRef<Map<string, number>>(new Map());
+  const NOTIFY_DEBOUNCE_MS = 5000;
 
   useEffect(() => {
     const unsubs: Array<() => void> = [];
@@ -240,14 +244,46 @@ export function AppState() {
         if (localUserId && event.getSender() === localUserId) return;
 
         setState((prev) => {
-          // Skip if the user is currently viewing this server
-          if (prev.activeServerId === serverId) return prev;
+          // Increment unread if this server is not active
+          if (prev.activeServerId !== serverId) {
+            const existing = prev.servers.get(serverId);
+            if (!existing) return prev;
+            const next = new Map(prev.servers);
+            next.set(serverId, { ...existing, unreadCount: existing.unreadCount + 1 });
+            return { ...prev, servers: next };
+          }
+          return prev;
+        });
 
+        // OS notification: fire when this server is not active OR window not focused,
+        // gated on per-server notificationsEnabled and debounce.
+        setState((prev) => {
           const existing = prev.servers.get(serverId);
           if (!existing) return prev;
-          const next = new Map(prev.servers);
-          next.set(serverId, { ...existing, unreadCount: existing.unreadCount + 1 });
-          return { ...prev, servers: next };
+
+          // Per-server notifications toggle (default true)
+          const notifEnabled = existing.entry.notificationsEnabled ?? true;
+          if (!notifEnabled) return prev;
+
+          // Only notify if server is not active or window not focused
+          const isActiveServer = prev.activeServerId === serverId;
+          const windowFocused = document.hasFocus();
+          if (isActiveServer && windowFocused) return prev;
+
+          // Debounce: cap at 1 notification per server per 5 seconds
+          const now = Date.now();
+          const lastTime = lastNotifiedRef.current.get(serverId) ?? 0;
+          if (now - lastTime < NOTIFY_DEBOUNCE_MS) return prev;
+          lastNotifiedRef.current.set(serverId, now);
+
+          const serverLabel = existing.entry.label || existing.entry.serverUrl;
+          void window.hailfreq
+            .invoke("notify:show", { title: serverLabel, body: "New message", serverId })
+            .catch((err: unknown) => {
+              console.error("notify:show failed:", err);
+            });
+
+          return prev;
         });
       };
 
@@ -289,6 +325,15 @@ export function AppState() {
       return { ...s, servers, activeServerId: id, globalScreen: { kind: "active" } };
     });
   }, []);
+
+  // Subscribe to notify:clicked to switch active server when notification is clicked
+  useEffect(() => {
+    const unsub = window.hailfreq.onNotifyClicked((payload: { serverId?: string }) => {
+      if (!payload.serverId) return;
+      handleSelectServer(payload.serverId);
+    });
+    return unsub;
+  }, [handleSelectServer]);
 
   const handleAddClicked = useCallback(() => {
     setState((s) => ({ ...s, globalScreen: { kind: "adding-server" } }));
@@ -472,6 +517,44 @@ export function AppState() {
     setState((s) => ({ ...s, transmittingNet: net }));
   }, []);
 
+  const handleReorder = useCallback((orderedIds: string[]) => {
+    // Persist new order to store
+    void window.hailfreq.invoke("servers:reorder", { orderedIds }).catch((err: unknown) => {
+      console.error("servers:reorder failed:", err);
+    });
+    // Update local state: rebuild Map in the new order
+    setState((s) => {
+      const next = new Map<string, ServerInstance>();
+      for (const id of orderedIds) {
+        const instance = s.servers.get(id);
+        if (instance) next.set(id, instance);
+      }
+      // Append any servers not in orderedIds (safety net)
+      for (const [id, instance] of s.servers) {
+        if (!next.has(id)) next.set(id, instance);
+      }
+      return { ...s, servers: next };
+    });
+  }, []);
+
+  const handleToggleNotifications = useCallback(
+    async (serverId: string, enabled: boolean) => {
+      await window.hailfreq.invoke("servers:update", {
+        serverId,
+        patch: { notificationsEnabled: enabled },
+      });
+      setState((s) =>
+        patchServer(s, serverId, {
+          entry: {
+            ...s.servers.get(serverId)!.entry,
+            notificationsEnabled: enabled,
+          },
+        }),
+      );
+    },
+    [],
+  );
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -507,6 +590,8 @@ export function AppState() {
         onAddClicked={handleAddClicked}
         onRemoveServer={handleRemoveServer}
         onRenameServer={handleRenameServer}
+        onToggleNotifications={handleToggleNotifications}
+        onReorder={handleReorder}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (

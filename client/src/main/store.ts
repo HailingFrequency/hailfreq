@@ -47,6 +47,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
       userId: typed.userId ?? "",
       lastLoginMethod: typed.lastLoginMethod ?? "",
       lastSyncedMs: 0,
+      notificationsEnabled: true,
       voicePrefs: {
         volumes: {},
         keybinds: {},
@@ -101,6 +102,7 @@ export function addServer(label: string, serverUrl: string): ServerEntry {
     userId: "",
     lastLoginMethod: "",
     lastSyncedMs: 0,
+    notificationsEnabled: true,
     voicePrefs: {
       volumes: {},
       keybinds: {},
@@ -144,4 +146,15 @@ export function updateServer(serverId: string, patch: Partial<ServerEntry>): Ser
   next[idx] = updated;
   settings.set("servers", next);
   return updated;
+}
+
+export function reorderServers(orderedIds: string[]): void {
+  const servers = settings.get("servers");
+  const byId = new Map(servers.map((s) => [s.id, s]));
+  const reordered = orderedIds.map((id) => byId.get(id)).filter((s): s is ServerEntry => !!s);
+  // Append any servers not present in orderedIds (safety net)
+  for (const s of servers) {
+    if (!orderedIds.includes(s.id)) reordered.push(s);
+  }
+  settings.set("servers", reordered);
 }
