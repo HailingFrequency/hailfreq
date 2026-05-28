@@ -19,6 +19,7 @@ docker compose up -d
 - `compose.yml` — service definitions
 - `Caddyfile` — reverse proxy + TLS
 - `synapse/`, `livekit/`, `coturn/` — per-service config templates
+- `livekit-auth/` — Token-minting service for LiveKit access
 - `scripts/` — setup, secrets, healthcheck, admin bootstrap
 - `tests/` — integration tests
 - `docs/` — operator documentation
