@@ -649,6 +649,19 @@ function ActiveServerView({
 }: ActiveServerViewProps) {
   const { screen, entry, handle, pendingVerification, chosenVerificationMethod } = instance;
 
+  // Expose the Matrix ClientHandle for Plan 6+ E2E tests when running under HAILFREQ_TEST=1.
+  // Mirrors the window.__voiceEngine pattern in NetListPanel.
+  useEffect(() => {
+    if (process.env.HAILFREQ_TEST === "1") {
+      (window as any).__matrixHandle = handle;
+    }
+    return () => {
+      if (process.env.HAILFREQ_TEST === "1") {
+        delete (window as any).__matrixHandle;
+      }
+    };
+  }, [handle]);
+
   // If an incoming verification request is pending, render the verification overlay
   // regardless of which screen the server is on (it will be on "home" for
   // signed-in servers, but be defensive).
