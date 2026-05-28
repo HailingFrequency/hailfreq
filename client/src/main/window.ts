@@ -18,7 +18,10 @@ export function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, "../preload/index.mjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      // sandbox: false because the preload is compiled as ESM (project "type":"module")
+      // and Electron's sandbox mode requires CJS preloads. contextIsolation=true
+      // provides the equivalent security guarantee for our threat model.
+      sandbox: false,
     },
   });
 
@@ -28,7 +31,8 @@ export function createMainWindow(): BrowserWindow {
     win.loadFile(path.join(__dirname, "../../dist/index.html"));
   }
 
-  if (isDev) {
+  // Open DevTools in dev mode unless running under E2E tests (HAILFREQ_TEST=1)
+  if (isDev && !process.env.HAILFREQ_TEST) {
     win.webContents.openDevTools({ mode: "detach" });
   }
 

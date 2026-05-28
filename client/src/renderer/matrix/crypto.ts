@@ -110,26 +110,65 @@ export async function bootstrapSecretStorageWithNewKey(
   }
 
   let capturedKey: GeneratedSecretStorageKey | null = null;
+  let capturedKeyId: string | null = null;
 
-  await crypto.bootstrapSecretStorage({
-    setupNewSecretStorage: true,
-    createSecretStorageKey: async (): Promise<GeneratedSecretStorageKey> => {
-      // Generate 32 cryptographically random bytes for the key.
-      const privateKey = new Uint8Array(32);
-      globalThis.crypto.getRandomValues(privateKey);
+  // Install a getSecretStorageKey callback BEFORE bootstrapSecretStorage so
+  // that when the SDK's `store` function needs to encrypt the cross-signing keys
+  // under the new SSSS key, it can get the private key bytes from us.
+  // This callback is updated once we know the keyId (from cacheSecretStorageKey).
+  const prevGetSecretStorageKey = client.cryptoCallbacks.getSecretStorageKey;
+  client.cryptoCallbacks.getSecretStorageKey = async ({ keys }) => {
+    if (capturedKey && capturedKeyId && keys[capturedKeyId]) {
+      return [capturedKeyId, capturedKey.privateKey];
+    }
+    // Fall back to the original callback (or return null for fresh accounts)
+    if (prevGetSecretStorageKey) {
+      return prevGetSecretStorageKey({ keys }, "");
+    }
+    return null;
+  };
 
-      const encodedPrivateKey = encodeRecoveryKey(privateKey);
+  // Install a cacheSecretStorageKey callback to learn the keyId once the key
+  // has been registered in account data (before store() is called).
+  const prevCacheSecretStorageKey = client.cryptoCallbacks.cacheSecretStorageKey;
+  client.cryptoCallbacks.cacheSecretStorageKey = (keyId, _keyInfo, _privateKey) => {
+    capturedKeyId = keyId;
+    if (prevCacheSecretStorageKey) prevCacheSecretStorageKey(keyId, _keyInfo, _privateKey);
+  };
 
-      const generated: GeneratedSecretStorageKey = {
-        privateKey,
-        encodedPrivateKey,
-        keyInfo: {},
-      };
+  try {
+    await crypto.bootstrapSecretStorage({
+      setupNewSecretStorage: true,
+      createSecretStorageKey: async (): Promise<GeneratedSecretStorageKey> => {
+        // Generate 32 cryptographically random bytes for the key.
+        const privateKey = new Uint8Array(32);
+        globalThis.crypto.getRandomValues(privateKey);
 
-      capturedKey = generated;
-      return generated;
-    },
-  });
+        const encodedPrivateKey = encodeRecoveryKey(privateKey);
+
+        const generated: GeneratedSecretStorageKey = {
+          privateKey,
+          encodedPrivateKey,
+          keyInfo: {},
+        };
+
+        capturedKey = generated;
+        return generated;
+      },
+    });
+  } finally {
+    // Restore the original callbacks
+    if (prevGetSecretStorageKey === undefined) {
+      delete client.cryptoCallbacks.getSecretStorageKey;
+    } else {
+      client.cryptoCallbacks.getSecretStorageKey = prevGetSecretStorageKey;
+    }
+    if (prevCacheSecretStorageKey === undefined) {
+      delete client.cryptoCallbacks.cacheSecretStorageKey;
+    } else {
+      client.cryptoCallbacks.cacheSecretStorageKey = prevCacheSecretStorageKey;
+    }
+  }
 
   if (!capturedKey) {
     throw new Error(

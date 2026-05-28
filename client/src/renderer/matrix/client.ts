@@ -12,11 +12,20 @@ export interface ClientHandle {
  * Caller is responsible for calling `shutdown()` on logout / unmount.
  */
 export async function startClient(creds: Credentials): Promise<ClientHandle> {
+  // Provide cryptoCallbacks at construction time so both `client.cryptoCallbacks`
+  // and the internal `ServerSideSecretStorageImpl` share the same object reference.
+  // We start with a no-op getSecretStorageKey (returns null = no existing key).
+  // The restore-from-recovery-key flow will replace this callback when needed.
+  const cryptoCallbacks = {
+    getSecretStorageKey: async () => null as null,
+  };
+
   const client = createClient({
     baseUrl: creds.homeserverUrl,
     userId: creds.userId,
     accessToken: creds.accessToken,
     deviceId: creds.deviceId,
+    cryptoCallbacks,
   });
 
   await client.initRustCrypto();
