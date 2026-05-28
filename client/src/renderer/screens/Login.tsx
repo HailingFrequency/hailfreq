@@ -34,11 +34,7 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
     setBusy(true);
     try {
       const creds = await loginWithPassword(serverUrl, username, password);
-      await window.hailfreq.invoke("tokens:save", creds);
-      await window.hailfreq.invoke("settings:set", {
-        userId: creds.userId,
-        lastLoginMethod: "local",
-      });
+      // Persistence (tokens:save, servers:update) is handled by AppState's onLoggedIn callback.
       onLoggedIn(creds, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -76,13 +72,7 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
       // Exchange token for credentials
       const creds = await loginWithToken(serverUrl, ssoResult.loginToken);
 
-      // Save credentials and settings
-      await window.hailfreq.invoke("tokens:save", creds);
-      await window.hailfreq.invoke("settings:set", {
-        userId: creds.userId,
-        lastLoginMethod: "citizenid",
-      });
-
+      // Persistence (tokens:save, servers:update) is handled by AppState's onLoggedIn callback.
       setError(null);
       onLoggedIn(creds, null);
     } catch (err) {

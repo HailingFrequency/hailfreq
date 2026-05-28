@@ -1,195 +1,85 @@
-import { useEffect, useState, type ReactNode } from "react";
-import type { MatrixClient } from "matrix-js-sdk";
-import { FirstRun } from "./screens/FirstRun";
+import { useEffect, useState, type ReactNode, useCallback } from "react";
+import type { ServerEntry } from "@shared/types";
+import type { StoredCredentials } from "@shared/ipc";
+import type { ClientHandle } from "./matrix/client";
+import { startClient } from "./matrix/client";
+import { Sidebar } from "./components/Sidebar";
+import { AddServer } from "./screens/AddServer";
 import { Login } from "./screens/Login";
 import { EncryptionSetup } from "./screens/EncryptionSetup";
 import { RestoreFromRecoveryKey } from "./screens/RestoreFromRecoveryKey";
 import { Home } from "./screens/Home";
 import type { Credentials } from "./matrix/types";
-import { EmojiVerification } from "./components/EmojiVerification";
-import { subscribeToVerificationRequests } from "./matrix/verification";
-import type { VerificationRequest } from "matrix-js-sdk/lib/crypto-api/verification";
-import type { ClientHandle } from "./matrix/client";
 
-type Screen =
-  | { kind: "loading" }
-  | { kind: "first-run" }
-  | { kind: "login"; serverUrl: string }
-  | {
-      kind: "encryption-setup";
-      client: MatrixClient;
-      password: string | null;
-      creds: Credentials;
-      handle: ClientHandle;
-    }
-  | {
-      kind: "restore-from-recovery";
-      client: MatrixClient;
-      creds: Credentials;
-      handle: ClientHandle;
-    }
-  | { kind: "home"; serverUrl: string; userId: string; creds: Credentials; client: MatrixClient; handle: ClientHandle };
+// ---------------------------------------------------------------------------
+// Core types
+// ---------------------------------------------------------------------------
 
-export function AppState() {
-  const [screen, setScreen] = useState<Screen>({ kind: "loading" });
+interface ServerInstance {
+  entry: ServerEntry;
+  handle?: ClientHandle;
+  screen:
+    | { kind: "loading" }
+    | { kind: "login" }
+    | { kind: "encryption-setup"; password: string | null }
+    | { kind: "restore-from-recovery" }
+    | { kind: "home" }
+    | { kind: "error"; message: string };
+}
 
-  useEffect(() => {
-    void (async () => {
-      const s = await window.hailfreq.invoke("settings:get");
-      if (!s.serverUrl) {
-        setScreen({ kind: "first-run" });
-        return;
+interface AppLevelState {
+  servers: Map<string, ServerInstance>;
+  /** Empty string when no servers exist. */
+  activeServerId: string;
+  globalScreen:
+    | { kind: "loading" }
+    | { kind: "no-servers" }
+    | { kind: "active" }
+    | { kind: "adding-server" };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Immutably update a single ServerInstance inside AppLevelState. */
+function patchServer(
+  state: AppLevelState,
+  serverId: string,
+  patch: Partial<ServerInstance>,
+): AppLevelState {
+  const existing = state.servers.get(serverId);
+  if (!existing) return state;
+  const next = new Map(state.servers);
+  next.set(serverId, { ...existing, ...patch });
+  return { ...state, servers: next };
+}
+
+/**
+ * Probe stored credentials and start the Matrix client if valid.
+ * Routes to "home" on success, "login" on failure/expiry.
+ */
+async function initServer(entry: ServerEntry): Promise<ServerInstance> {
+  const stored = await window.hailfreq.invoke("tokens:load", { serverId: entry.id });
+  if (stored) {
+    try {
+      const ok = await validateAccessToken(stored.homeserverUrl, stored.accessToken);
+      if (ok) {
+        const handle = await startClient({
+          userId: stored.userId,
+          accessToken: stored.accessToken,
+          deviceId: stored.deviceId,
+          homeserverUrl: stored.homeserverUrl,
+        });
+        return { entry, handle, screen: { kind: "home" } };
       }
-      const stored = await window.hailfreq.invoke("tokens:load");
-      if (stored && stored.userId === s.userId) {
-        // Validate token by hitting /_matrix/client/v3/account/whoami
-        const ok = await validateAccessToken(stored.homeserverUrl, stored.accessToken);
-        if (ok) {
-          const { startClient } = await import("./matrix/client");
-          const handle = await startClient(stored);
-          setScreen({ kind: "home", serverUrl: s.serverUrl, userId: stored.userId, creds: stored, client: handle.client, handle });
-          return;
-        }
-        // Token rejected — clear and force login
-        await window.hailfreq.invoke("tokens:clear");
-        await window.hailfreq.invoke("settings:set", { userId: "" });
-      }
-      setScreen({ kind: "login", serverUrl: s.serverUrl });
-    })();
-  }, []);
-
-  switch (screen.kind) {
-    case "loading":
-      return <CenteredMessage>Loading…</CenteredMessage>;
-
-    case "first-run":
-      return <FirstRun onConfigured={(url) => setScreen({ kind: "login", serverUrl: url })} />;
-
-    case "login":
-      return (
-        <Login
-          serverUrl={screen.serverUrl}
-          onLoggedIn={async (creds, password) => {
-            const { startClient } = await import("./matrix/client");
-            const handle = await startClient(creds);
-            setScreen({
-              kind: "encryption-setup",
-              client: handle.client,
-              password,
-              creds,
-              handle,
-            });
-          }}
-        />
-      );
-
-    case "encryption-setup":
-      return (
-        <EncryptionSetup
-          client={screen.client}
-          password={screen.password}
-          onDone={() =>
-            setScreen({
-              kind: "home",
-              serverUrl: screen.creds.homeserverUrl,
-              userId: screen.creds.userId,
-              creds: screen.creds,
-              client: screen.client,
-              handle: screen.handle,
-            })
-          }
-          onNeedsExistingRecovery={() =>
-            setScreen({
-              kind: "restore-from-recovery",
-              client: screen.client,
-              creds: screen.creds,
-              handle: screen.handle,
-            })
-          }
-        />
-      );
-
-    case "restore-from-recovery":
-      return (
-        <RestoreFromRecoveryKey
-          client={screen.client}
-          onRestored={() =>
-            setScreen({
-              kind: "home",
-              serverUrl: screen.creds.homeserverUrl,
-              userId: screen.creds.userId,
-              creds: screen.creds,
-              client: screen.client,
-              handle: screen.handle,
-            })
-          }
-        />
-      );
-
-    case "home": {
-      return (
-        <HomeShellWithVerification
-          client={screen.client}
-          userId={screen.userId}
-          handle={screen.handle}
-          serverUrl={screen.serverUrl}
-          setScreen={setScreen}
-        />
-      );
+    } catch {
+      // Token expired, homeserver unreachable, or crypto init failed — fall through to login
     }
+    // Clear stale/invalid credentials
+    await window.hailfreq.invoke("tokens:clear", { serverId: entry.id });
   }
-}
-
-interface HomeShellWithVerificationProps {
-  client: MatrixClient;
-  userId: string;
-  handle: ClientHandle;
-  serverUrl: string;
-  setScreen: (screen: Screen) => void;
-}
-
-function HomeShellWithVerification({
-  client,
-  handle,
-  serverUrl,
-  setScreen,
-}: HomeShellWithVerificationProps) {
-  const [pendingVerification, setPendingVerification] =
-    useState<VerificationRequest | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToVerificationRequests(client, (request) => {
-      setPendingVerification(request);
-    });
-    return unsubscribe;
-  }, [client]);
-
-  async function handleLogout() {
-    await handle.shutdown();
-    await window.hailfreq.invoke("tokens:clear");
-    await window.hailfreq.invoke("settings:set", { userId: "", lastLoginMethod: "" });
-    setScreen({ kind: "login", serverUrl });
-  }
-
-  return (
-    <>
-      <Home client={client} onLogout={handleLogout} />
-      {pendingVerification !== null && (
-        <EmojiVerification
-          request={pendingVerification}
-          onDone={() => setPendingVerification(null)}
-        />
-      )}
-    </>
-  );
-}
-
-function CenteredMessage({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <p className="text-sm text-slate-400">{children}</p>
-    </div>
-  );
+  return { entry, screen: { kind: "login" } };
 }
 
 async function validateAccessToken(homeserverUrl: string, accessToken: string): Promise<boolean> {
@@ -201,4 +91,300 @@ async function validateAccessToken(homeserverUrl: string, accessToken: string): 
   } catch {
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Root component
+// ---------------------------------------------------------------------------
+
+export function AppState() {
+  const [state, setState] = useState<AppLevelState>({
+    servers: new Map(),
+    activeServerId: "",
+    globalScreen: { kind: "loading" },
+  });
+
+  // Boot: load settings, initialise one ServerInstance per configured server.
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const settings = await window.hailfreq.invoke("settings:get");
+      if (cancelled) return;
+
+      const servers = new Map<string, ServerInstance>();
+      for (const entry of settings.servers) {
+        const instance = await initServer(entry);
+        if (cancelled) return;
+        servers.set(entry.id, instance);
+      }
+
+      const activeServerId =
+        settings.activeServerId || settings.servers[0]?.id || "";
+
+      const globalScreen: AppLevelState["globalScreen"] =
+        settings.servers.length === 0 ? { kind: "no-servers" } : { kind: "active" };
+
+      setState({ servers, activeServerId, globalScreen });
+    })();
+
+    // Best-effort shutdown of all ClientHandles when the component unmounts.
+    return () => {
+      cancelled = true;
+      setState((s) => {
+        s.servers.forEach((srv) => {
+          void srv.handle?.shutdown().catch(() => undefined);
+        });
+        return s;
+      });
+    };
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Callbacks
+  // -------------------------------------------------------------------------
+
+  /** Called by AddServer screen after a new ServerEntry has been persisted. */
+  const handleServerAdded = useCallback(async (entry: ServerEntry) => {
+    const instance = await initServer(entry);
+    setState((s) => ({
+      ...s,
+      servers: new Map(s.servers).set(entry.id, instance),
+      activeServerId: entry.id,
+      globalScreen: { kind: "active" },
+    }));
+  }, []);
+
+  const handleSelectServer = useCallback((id: string) => {
+    setState((s) => ({ ...s, activeServerId: id, globalScreen: { kind: "active" } }));
+  }, []);
+
+  const handleAddClicked = useCallback(() => {
+    setState((s) => ({ ...s, globalScreen: { kind: "adding-server" } }));
+  }, []);
+
+  const handleCancelAdd = useCallback(() => {
+    setState((s) => ({ ...s, globalScreen: { kind: "active" } }));
+  }, []);
+
+  /**
+   * onLoggedIn: owns token + server-metadata persistence (option b from the plan).
+   * Login.tsx just calls this with raw creds; AppState handles IPC side effects.
+   */
+  const makeLoginHandler = useCallback(
+    (serverId: string) =>
+      async (creds: Credentials, password: string | null) => {
+        const storedCreds: StoredCredentials = {
+          userId: creds.userId,
+          accessToken: creds.accessToken,
+          deviceId: creds.deviceId,
+          homeserverUrl: creds.homeserverUrl,
+        };
+
+        await window.hailfreq.invoke("tokens:save", {
+          serverId,
+          credentials: storedCreds,
+        });
+        await window.hailfreq.invoke("servers:update", {
+          serverId,
+          patch: {
+            userId: creds.userId,
+            lastLoginMethod: password !== null ? "local" : "citizenid",
+          },
+        });
+
+        const handle = await startClient(creds);
+
+        setState((s) =>
+          patchServer(s, serverId, {
+            handle,
+            entry: {
+              ...s.servers.get(serverId)!.entry,
+              userId: creds.userId,
+              lastLoginMethod: password !== null ? "local" : "citizenid",
+            },
+            screen: { kind: "encryption-setup", password },
+          }),
+        );
+      },
+    [],
+  );
+
+  const makeEncryptionDoneHandler = useCallback(
+    (serverId: string) => () => {
+      setState((s) => patchServer(s, serverId, { screen: { kind: "home" } }));
+    },
+    [],
+  );
+
+  const makeNeedsExistingRecoveryHandler = useCallback(
+    (serverId: string) => () => {
+      setState((s) =>
+        patchServer(s, serverId, { screen: { kind: "restore-from-recovery" } }),
+      );
+    },
+    [],
+  );
+
+  const makeRestoredHandler = useCallback(
+    (serverId: string) => () => {
+      setState((s) => patchServer(s, serverId, { screen: { kind: "home" } }));
+    },
+    [],
+  );
+
+  const makeLogoutHandler = useCallback(
+    (serverId: string, handle: ClientHandle | undefined) =>
+      async () => {
+        await handle?.shutdown();
+        await window.hailfreq.invoke("tokens:clear", { serverId });
+        await window.hailfreq.invoke("servers:update", {
+          serverId,
+          patch: { userId: "", lastLoginMethod: "" },
+        });
+        setState((s) =>
+          patchServer(s, serverId, {
+            handle: undefined,
+            entry: {
+              ...s.servers.get(serverId)!.entry,
+              userId: "",
+              lastLoginMethod: "",
+            },
+            screen: { kind: "login" },
+          }),
+        );
+      },
+    [],
+  );
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
+
+  const { globalScreen } = state;
+
+  if (globalScreen.kind === "loading") {
+    return <Centered>Loading…</Centered>;
+  }
+
+  if (globalScreen.kind === "no-servers") {
+    return (
+      <AddServer
+        onAdded={handleServerAdded}
+        cancellable={false}
+      />
+    );
+  }
+
+  // "active" | "adding-server" — sidebar is always visible here
+  const activeInstance = state.servers.get(state.activeServerId);
+
+  return (
+    <div className="flex h-full">
+      <Sidebar
+        servers={Array.from(state.servers.values()).map((s) => s.entry)}
+        activeServerId={state.activeServerId}
+        onSelect={handleSelectServer}
+        onAddClicked={handleAddClicked}
+      />
+      <div className="flex-1 overflow-hidden">
+        {globalScreen.kind === "adding-server" ? (
+          <AddServer
+            onAdded={handleServerAdded}
+            onCancel={handleCancelAdd}
+            cancellable={true}
+          />
+        ) : activeInstance ? (
+          <ActiveServerView
+            instance={activeInstance}
+            onLoggedIn={makeLoginHandler(activeInstance.entry.id)}
+            onEncryptionDone={makeEncryptionDoneHandler(activeInstance.entry.id)}
+            onNeedsExistingRecovery={makeNeedsExistingRecoveryHandler(activeInstance.entry.id)}
+            onRestored={makeRestoredHandler(activeInstance.entry.id)}
+            onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle)}
+          />
+        ) : (
+          <Centered>No server selected.</Centered>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Per-server screen router
+// ---------------------------------------------------------------------------
+
+interface ActiveServerViewProps {
+  instance: ServerInstance;
+  onLoggedIn: (creds: Credentials, password: string | null) => Promise<void>;
+  onEncryptionDone: () => void;
+  onNeedsExistingRecovery: () => void;
+  onRestored: () => void;
+  onLogout: () => Promise<void>;
+}
+
+function ActiveServerView({
+  instance,
+  onLoggedIn,
+  onEncryptionDone,
+  onNeedsExistingRecovery,
+  onRestored,
+  onLogout,
+}: ActiveServerViewProps) {
+  const { screen, entry, handle } = instance;
+
+  switch (screen.kind) {
+    case "loading":
+      return <Centered>Loading…</Centered>;
+
+    case "login":
+      return (
+        <Login
+          serverUrl={entry.serverUrl}
+          onLoggedIn={onLoggedIn}
+        />
+      );
+
+    case "encryption-setup":
+      return (
+        <EncryptionSetup
+          client={handle!.client}
+          password={screen.password}
+          onDone={onEncryptionDone}
+          onNeedsExistingRecovery={onNeedsExistingRecovery}
+        />
+      );
+
+    case "restore-from-recovery":
+      return (
+        <RestoreFromRecoveryKey
+          client={handle!.client}
+          onRestored={onRestored}
+        />
+      );
+
+    case "home":
+      return (
+        <Home
+          client={handle!.client}
+          onLogout={onLogout}
+        />
+      );
+
+    case "error":
+      return <Centered>{screen.message}</Centered>;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared UI primitives
+// ---------------------------------------------------------------------------
+
+function Centered({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <p className="text-sm text-slate-400">{children}</p>
+    </div>
+  );
 }
