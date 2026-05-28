@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
 import { listNets, subscribeToNetsChanges, type NetSummary } from "../matrix/nets";
-import { buildRoster, subscribeToRosterChanges, type RosterMember } from "../matrix/roster";
+import {
+  buildRoster,
+  enrichRosterWithProfiles,
+  subscribeToRosterChanges,
+  type RosterMember,
+} from "../matrix/roster";
 import { detectAdminCapabilities, type AdminCapabilities } from "../matrix/permissions";
 import { AdminNetList } from "../components/AdminNetList";
 import { AdminRoster } from "../components/AdminRoster";
 import { AdminDetail } from "../components/AdminDetail";
+import { UserSearchDialog } from "../components/UserSearchDialog";
 import { Button } from "../components/Button";
 
 interface AdminBoardProps {
@@ -19,12 +25,16 @@ export function AdminBoard({ client, onClose }: AdminBoardProps) {
   const [caps, setCaps] = useState<AdminCapabilities | null>(null);
   const [selectedNetId, setSelectedNetId] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [showInvite, setShowInvite] = useState(false);
 
   useEffect(() => {
     const refresh = () => {
       const currentNets = listNets(client);
       setNets(currentNets);
-      setRoster(buildRoster(client, currentNets));
+      const baseRoster = buildRoster(client, currentNets);
+      setRoster(baseRoster);
+      // Asynchronously enrich with CitizenID profiles; triggers a re-render only if data changed
+      void enrichRosterWithProfiles(client, baseRoster, setRoster);
     };
     refresh();
     const unsubNets = subscribeToNetsChanges(client, refresh);
@@ -70,9 +80,16 @@ export function AdminBoard({ client, onClose }: AdminBoardProps) {
             {caps.isServerAdmin && " · Server admin"}
           </p>
         </div>
-        <Button variant="ghost" onClick={onClose}>
-          Back to Home
-        </Button>
+        <div className="flex items-center gap-2">
+          {selectedNetId && caps.adminNets.has(selectedNetId) && (
+            <Button variant="ghost" onClick={() => setShowInvite(true)}>
+              + Invite user
+            </Button>
+          )}
+          <Button variant="ghost" onClick={onClose}>
+            Back to Home
+          </Button>
+        </div>
       </header>
 
       <div className="grid flex-1 grid-cols-[260px_1fr_300px] overflow-hidden">
@@ -82,6 +99,7 @@ export function AdminBoard({ client, onClose }: AdminBoardProps) {
             nets={nets}
             selectedNetId={selectedNetId}
             onSelect={setSelectedNetId}
+            adminNetIds={caps.adminNets}
           />
         </div>
         <div className="overflow-auto">
@@ -102,6 +120,18 @@ export function AdminBoard({ client, onClose }: AdminBoardProps) {
           />
         </div>
       </div>
+
+      {showInvite && selectedNetId && (
+        <UserSearchDialog
+          client={client}
+          targetNetId={selectedNetId}
+          targetNetName={
+            nets.find((n) => n.matrixRoomId === selectedNetId)?.properties.name ??
+            selectedNetId
+          }
+          onClose={() => setShowInvite(false)}
+        />
+      )}
     </div>
   );
 }
