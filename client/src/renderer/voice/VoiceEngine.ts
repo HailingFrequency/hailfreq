@@ -166,15 +166,17 @@ export class VoiceEngine {
   async unmonitorNet(matrixRoomId: string): Promise<void> {
     const state = this.nets.get(matrixRoomId);
     if (!state) return;
+    // Delete BEFORE disconnect so the disconnected event handler doesn't try to reconnect
+    this.nets.delete(matrixRoomId);
     await state.connection.disconnect();
     state.duckGain.disconnect();
     state.volumeGain.disconnect();
     for (const node of state.trackNodes.values()) {
       node.disconnect();
     }
-    this.nets.delete(matrixRoomId);
     const timer = this.duckHangoverTimers.get(matrixRoomId);
     if (timer) clearTimeout(timer);
+    this.duckHangoverTimers.delete(matrixRoomId);
   }
 
   /** Update a net's user-controlled volume (0.0–2.0). */
