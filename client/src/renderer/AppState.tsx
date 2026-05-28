@@ -1,15 +1,18 @@
-import { useEffect, useState, type ReactNode, useCallback } from "react";
+import { useEffect, useMemo, useState, type ReactNode, useCallback } from "react";
 import type { ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
 import { startClient } from "./matrix/client";
+import { subscribeToVerificationRequests } from "./matrix/verification";
 import { Sidebar } from "./components/Sidebar";
+import { EmojiVerification } from "./components/EmojiVerification";
 import { AddServer } from "./screens/AddServer";
 import { Login } from "./screens/Login";
 import { EncryptionSetup } from "./screens/EncryptionSetup";
 import { RestoreFromRecoveryKey } from "./screens/RestoreFromRecoveryKey";
 import { Home } from "./screens/Home";
 import type { Credentials } from "./matrix/types";
+import type { VerificationRequest } from "matrix-js-sdk/lib/crypto-api/verification";
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -25,6 +28,8 @@ interface ServerInstance {
     | { kind: "restore-from-recovery" }
     | { kind: "home" }
     | { kind: "error"; message: string };
+  /** Non-null when an incoming SAS verification request is waiting to be handled. */
+  pendingVerification?: VerificationRequest;
 }
 
 interface AppLevelState {
@@ -141,6 +146,56 @@ export function AppState() {
   }, []);
 
   // -------------------------------------------------------------------------
+  // Per-server verification subscriptions
+  // -------------------------------------------------------------------------
+
+  /**
+   * Derive a stable list of [serverId, MatrixClient] pairs for signed-in servers.
+   * Keying the effect on this avoids re-subscribing on every unrelated state change —
+   * the effect only re-runs when the set of signed-in clients actually changes.
+   */
+  const signedInClients = useMemo(
+    () =>
+      Array.from(state.servers.entries())
+        .filter(([, instance]) => instance.handle != null)
+        .map(([serverId, instance]) => [serverId, instance.handle!.client] as const),
+    // We intentionally depend only on the Map reference itself; a new Map is
+    // created by patchServer / immutable helpers whenever the set of clients
+    // changes (login, logout, server add/remove), so this is safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.servers],
+  );
+
+  useEffect(() => {
+    const unsubs: Array<() => void> = [];
+
+    for (const [serverId, client] of signedInClients) {
+      const unsub = subscribeToVerificationRequests(client, (request) => {
+        // Use functional setState to avoid stale closures — always operate on
+        // the latest state snapshot, not the one captured at subscription time.
+        setState((prev) => {
+          const existing = prev.servers.get(serverId);
+          if (!existing) return prev;
+          const next = new Map(prev.servers);
+          next.set(serverId, { ...existing, pendingVerification: request });
+          return {
+            ...prev,
+            servers: next,
+            // Auto-switch the active view to the server receiving the request
+            activeServerId: serverId,
+            globalScreen: { kind: "active" },
+          };
+        });
+      });
+      unsubs.push(unsub);
+    }
+
+    return () => {
+      unsubs.forEach((u) => u());
+    };
+  }, [signedInClients]);
+
+  // -------------------------------------------------------------------------
   // Callbacks
   // -------------------------------------------------------------------------
 
@@ -229,6 +284,13 @@ export function AppState() {
   const makeRestoredHandler = useCallback(
     (serverId: string) => () => {
       setState((s) => patchServer(s, serverId, { screen: { kind: "home" } }));
+    },
+    [],
+  );
+
+  const makeVerificationDoneHandler = useCallback(
+    (serverId: string) => () => {
+      setState((s) => patchServer(s, serverId, { pendingVerification: undefined }));
     },
     [],
   );
@@ -340,6 +402,7 @@ export function AppState() {
             onNeedsExistingRecovery={makeNeedsExistingRecoveryHandler(activeInstance.entry.id)}
             onRestored={makeRestoredHandler(activeInstance.entry.id)}
             onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle)}
+            onVerificationDone={makeVerificationDoneHandler(activeInstance.entry.id)}
           />
         ) : (
           <Centered>No server selected.</Centered>
@@ -360,6 +423,7 @@ interface ActiveServerViewProps {
   onNeedsExistingRecovery: () => void;
   onRestored: () => void;
   onLogout: () => Promise<void>;
+  onVerificationDone: () => void;
 }
 
 function ActiveServerView({
@@ -369,8 +433,21 @@ function ActiveServerView({
   onNeedsExistingRecovery,
   onRestored,
   onLogout,
+  onVerificationDone,
 }: ActiveServerViewProps) {
-  const { screen, entry, handle } = instance;
+  const { screen, entry, handle, pendingVerification } = instance;
+
+  // If an incoming verification request is pending, render the overlay
+  // regardless of which screen the server is on (it will be on "home" for
+  // signed-in servers, but be defensive).
+  if (pendingVerification != null) {
+    return (
+      <EmojiVerification
+        request={pendingVerification}
+        onDone={onVerificationDone}
+      />
+    );
+  }
 
   switch (screen.kind) {
     case "loading":
