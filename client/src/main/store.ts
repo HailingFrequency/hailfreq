@@ -34,8 +34,12 @@ function deriveLabel(url: string): string {
 export function migrateLegacyShape(raw: unknown): Settings {
   const typed = raw as unknown as Settings & LegacyV1Settings;
 
-  // Legacy detection: old shape had top-level serverUrl
-  if (typeof typed.serverUrl === "string" && typed.serverUrl !== "" && !Array.isArray(typed.servers)) {
+  // Legacy detection: old shape had top-level serverUrl.
+  // `servers` may be [] because conf merges defaults before we read the raw store,
+  // so we also trigger when servers is an empty array alongside a non-empty serverUrl.
+  const hasLegacyUrl = typeof typed.serverUrl === "string" && typed.serverUrl !== "";
+  const hasNoServers = !Array.isArray(typed.servers) || typed.servers.length === 0;
+  if (hasLegacyUrl && hasNoServers) {
     const entry: ServerEntry = {
       id: randomUUID(),
       label: deriveLabel(typed.serverUrl),
@@ -62,17 +66,22 @@ export function migrateLegacyShape(raw: unknown): Settings {
 export const settings = new Store<Settings>({
   name: "settings",
   defaults,
-  // electron-store applies migrations top-down based on app version. Since we
-  // didn't version the original schema, do the migration in beforeEachMigration.
-  beforeEachMigration: (store) => {
-    const migrated = migrateLegacyShape(store.store);
-    // Replace the entire store atomically with the migrated shape
-    store.clear();
-    store.set("servers", migrated.servers);
-    store.set("activeServerId", migrated.activeServerId);
-    store.set("ui", migrated.ui);
-  },
 });
+
+// Run legacy migration synchronously on first import. Idempotent — calling
+// migrateLegacyShape on a current-shape store is a no-op.
+{
+  const current = settings.store as unknown;
+  const migrated = migrateLegacyShape(current);
+  // Only write back if the migration actually changed something
+  const changed = JSON.stringify(current) !== JSON.stringify(migrated);
+  if (changed) {
+    settings.clear();
+    settings.set("servers", migrated.servers);
+    settings.set("activeServerId", migrated.activeServerId);
+    settings.set("ui", migrated.ui);
+  }
+}
 
 export function addServer(label: string, serverUrl: string): ServerEntry {
   const id = randomUUID();
