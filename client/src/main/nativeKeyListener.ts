@@ -63,6 +63,19 @@ async function ensureListener(): Promise<boolean> {
   }
 }
 
+function normalizeKeyForListener(key: string): string {
+  // node-global-key-listener uses "NUMPAD 0", "NUMPAD 1", etc.
+  const numpadMatch = key.match(/^NUM(\d)$/);
+  if (numpadMatch) return `NUMPAD ${numpadMatch[1]}`;
+  if (key === "NUMPADDOT" || key === "NUMPADDECIMAL") return "NUMPAD DOT";
+  if (key === "NUMPADENTER") return "NUMPAD ENTER";
+  if (key === "NUMPADADD" || key === "NUMPADPLUS") return "NUMPAD +";
+  if (key === "NUMPADSUBTRACT" || key === "NUMPADMINUS") return "NUMPAD -";
+  if (key === "NUMPADMULTIPLY") return "NUMPAD *";
+  if (key === "NUMPADDIVIDE") return "NUMPAD /";
+  return key;
+}
+
 function acceleratorToMatcher(accelerator: string): { key: string; modifiers: string[] } {
   const parts = accelerator.split("+");
   const modifiers: string[] = [];
@@ -74,6 +87,7 @@ function acceleratorToMatcher(accelerator: string): { key: string; modifiers: st
       key = p.toUpperCase(); // node-global-key-listener uses uppercase
     }
   }
+  key = normalizeKeyForListener(key);
   return { key, modifiers };
 }
 
