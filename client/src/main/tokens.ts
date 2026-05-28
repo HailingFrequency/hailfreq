@@ -9,69 +9,76 @@ interface StoredCredentials {
   homeserverUrl: string;
 }
 
-function tokenFilePath(): string {
-  return path.join(app.getPath("userData"), "credentials.enc");
+function credentialsDir(): string {
+  return path.join(app.getPath("userData"), "credentials");
 }
 
-/**
- * Whether we can use OS-level encryption (safeStorage).
- * In headless test environments the system keyring is unavailable;
- * we fall back to plain-text storage, gated behind HAILFREQ_TEST=1.
- */
-function canEncrypt(): boolean {
-  return safeStorage.isEncryptionAvailable();
+function encryptedPath(serverId: string): string {
+  return path.join(credentialsDir(), `${serverId}.enc`);
+}
+
+function plaintextPath(serverId: string): string {
+  return path.join(credentialsDir(), `${serverId}.json`);
 }
 
 function isTestMode(): boolean {
   return process.env.HAILFREQ_TEST === "1";
 }
 
-function plainTextTokenFilePath(): string {
-  return path.join(app.getPath("userData"), "credentials.json");
-}
-
-export async function saveCredentials(creds: StoredCredentials): Promise<void> {
-  if (canEncrypt()) {
-    const json = JSON.stringify(creds);
-    const buf = safeStorage.encryptString(json);
-    await fs.writeFile(tokenFilePath(), buf, { mode: 0o600 });
+export async function saveCredentials(serverId: string, creds: StoredCredentials): Promise<void> {
+  await fs.mkdir(credentialsDir(), { recursive: true, mode: 0o700 });
+  if (isTestMode() && !safeStorage.isEncryptionAvailable()) {
+    await fs.writeFile(plaintextPath(serverId), JSON.stringify(creds), { mode: 0o600 });
     return;
   }
-  if (!isTestMode()) {
+  if (!safeStorage.isEncryptionAvailable()) {
     throw new Error("OS-level encryption unavailable; refusing to store tokens unencrypted.");
   }
-  // Test mode fallback: store plain JSON (acceptable because test credentials
-  // are ephemeral and the server is torn down after each test run).
-  await fs.writeFile(plainTextTokenFilePath(), JSON.stringify(creds), { mode: 0o600 });
+  const buf = safeStorage.encryptString(JSON.stringify(creds));
+  await fs.writeFile(encryptedPath(serverId), buf, { mode: 0o600 });
 }
 
-export async function loadCredentials(): Promise<StoredCredentials | null> {
-  if (canEncrypt()) {
-    try {
-      const buf = await fs.readFile(tokenFilePath());
-      const json = safeStorage.decryptString(buf);
-      return JSON.parse(json) as StoredCredentials;
-    } catch (err) {
-      if (isNoEntError(err)) return null;
-      throw err;
-    }
-  }
-  if (!isTestMode()) return null;
-  // Test mode fallback: read plain JSON
+export async function loadCredentials(serverId: string): Promise<StoredCredentials | null> {
+  // Try encrypted first
   try {
-    const json = await fs.readFile(plainTextTokenFilePath(), "utf8");
+    const buf = await fs.readFile(encryptedPath(serverId));
+    const json = safeStorage.decryptString(buf);
     return JSON.parse(json) as StoredCredentials;
   } catch (err) {
-    if (isNoEntError(err)) return null;
-    throw err;
+    if (!isNoEnt(err)) throw err;
   }
+  // Fallback to plaintext (test mode)
+  if (isTestMode()) {
+    try {
+      const json = await fs.readFile(plaintextPath(serverId), "utf8");
+      return JSON.parse(json) as StoredCredentials;
+    } catch (err) {
+      if (!isNoEnt(err)) throw err;
+    }
+  }
+  return null;
 }
 
-export async function clearCredentials(): Promise<void> {
-  await fs.rm(tokenFilePath(), { force: true });
-  await fs.rm(plainTextTokenFilePath(), { force: true });
+export async function clearCredentials(serverId: string): Promise<void> {
+  await fs.rm(encryptedPath(serverId), { force: true });
+  await fs.rm(plaintextPath(serverId), { force: true });
 }
 
-function isNoEntError(err: unknown): boolean {
+/**
+ * Move a legacy single-credentials.enc file into the new per-server location.
+ * Idempotent: no-op if the legacy file doesn't exist.
+ */
+export async function migrateLegacyCredentials(newServerId: string): Promise<void> {
+  const legacyPath = path.join(app.getPath("userData"), "credentials.enc");
+  try {
+    await fs.access(legacyPath);
+  } catch {
+    return; // No legacy file
+  }
+  await fs.mkdir(credentialsDir(), { recursive: true, mode: 0o700 });
+  await fs.rename(legacyPath, encryptedPath(newServerId));
+}
+
+function isNoEnt(err: unknown): boolean {
   return typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "ENOENT";
 }

@@ -1,11 +1,18 @@
 import { app, BrowserWindow } from "electron";
 import { createMainWindow } from "./window";
 import { registerIpcHandlers } from "./ipc";
+import { settings } from "./store";
+import { migrateLegacyCredentials } from "./tokens";
 
 let mainWindow: BrowserWindow | null = null;
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIpcHandlers();
+  // If migration just ran (single server with no token file yet), move the legacy token
+  const servers = settings.get("servers");
+  if (servers.length === 1) {
+    await migrateLegacyCredentials(servers[0].id);
+  }
   mainWindow = createMainWindow();
 
   app.on("activate", () => {

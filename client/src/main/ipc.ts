@@ -1,8 +1,8 @@
 import { app, ipcMain } from "electron";
-import { settings } from "./store";
-import { saveCredentials, loadCredentials, clearCredentials } from "./tokens";
+import { settings, addServer, removeServer, setActiveServer, updateServer } from "./store";
+import { saveCredentials, loadCredentials, clearCredentials, migrateLegacyCredentials } from "./tokens";
 import { runSsoFlow } from "./oidc";
-import type { Settings } from "../shared/types";
+import type { Settings, ServerEntry } from "../shared/types";
 import type { StoredCredentials } from "../shared/ipc";
 
 export function registerIpcHandlers(): void {
@@ -10,16 +10,31 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("app:platform", () => process.platform);
 
   ipcMain.handle("settings:get", (): Settings => settings.store);
-  ipcMain.handle("settings:set", (_event, partial: Partial<Settings>): Settings => {
-    for (const [key, value] of Object.entries(partial)) {
-      settings.set(key as keyof Settings, value as never);
-    }
+  ipcMain.handle("settings:setUi", (_event, ui: Settings["ui"]): Settings => {
+    settings.set("ui", ui);
     return settings.store;
   });
 
-  ipcMain.handle("tokens:save", (_event, creds: StoredCredentials) => saveCredentials(creds));
-  ipcMain.handle("tokens:load", () => loadCredentials());
-  ipcMain.handle("tokens:clear", () => clearCredentials());
+  ipcMain.handle("servers:add", (_event, args: { label: string; serverUrl: string }): ServerEntry =>
+    addServer(args.label, args.serverUrl),
+  );
+  ipcMain.handle("servers:remove", (_event, args: { serverId: string }): void => {
+    removeServer(args.serverId);
+  });
+  ipcMain.handle("servers:setActive", (_event, args: { serverId: string }): void => {
+    setActiveServer(args.serverId);
+  });
+  ipcMain.handle(
+    "servers:update",
+    (_event, args: { serverId: string; patch: Partial<ServerEntry> }): ServerEntry =>
+      updateServer(args.serverId, args.patch),
+  );
+
+  ipcMain.handle("tokens:save", (_event, args: { serverId: string; credentials: StoredCredentials }) =>
+    saveCredentials(args.serverId, args.credentials),
+  );
+  ipcMain.handle("tokens:load", (_event, args: { serverId: string }) => loadCredentials(args.serverId));
+  ipcMain.handle("tokens:clear", (_event, args: { serverId: string }) => clearCredentials(args.serverId));
 
   ipcMain.handle("oidc:startSsoFlow", (_event, params: { homeserverUrl: string; idpId: string }) =>
     runSsoFlow(params),

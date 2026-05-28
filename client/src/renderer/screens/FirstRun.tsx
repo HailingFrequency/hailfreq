@@ -35,7 +35,19 @@ export function FirstRun({ onConfigured }: FirstRunProps) {
       setError(`Could not reach Matrix homeserver at ${normalized}: ${probe.reason}`);
       return;
     }
-    await window.hailfreq.invoke("settings:set", { serverUrl: normalized });
+    // In Plan 3, server configuration goes through servers:add.
+    // FirstRun is superseded by AddServer but kept for reference; derive a label from the URL.
+    const label = (() => {
+      try {
+        const host = new URL(normalized).hostname;
+        const parts = host.split(".");
+        const root = parts.length >= 2 ? parts[parts.length - 2] : host;
+        return root.charAt(0).toUpperCase() + root.slice(1);
+      } catch {
+        return normalized;
+      }
+    })();
+    await window.hailfreq.invoke("servers:add", { label, serverUrl: normalized });
     onConfigured(normalized);
   }
 

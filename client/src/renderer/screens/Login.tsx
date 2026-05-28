@@ -6,7 +6,7 @@ import type { Credentials } from "../matrix/types";
 
 interface LoginProps {
   serverUrl: string;
-  onLoggedIn: (creds: Credentials, password: string | null) => void;
+  onLoggedIn: (creds: Credentials, password: string | null) => Promise<void> | void;
 }
 
 type Flows = {
@@ -34,12 +34,10 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
     setBusy(true);
     try {
       const creds = await loginWithPassword(serverUrl, username, password);
-      await window.hailfreq.invoke("tokens:save", creds);
-      await window.hailfreq.invoke("settings:set", {
-        userId: creds.userId,
-        lastLoginMethod: "local",
-      });
-      onLoggedIn(creds, password);
+      // Persistence (tokens:save, servers:update) is handled by AppState's onLoggedIn callback.
+      // Awaiting onLoggedIn ensures that any error from startClient (e.g. crypto init failure)
+      // is surfaced on the Login form rather than silently dropped as an unhandled rejection.
+      await onLoggedIn(creds, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -76,15 +74,11 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
       // Exchange token for credentials
       const creds = await loginWithToken(serverUrl, ssoResult.loginToken);
 
-      // Save credentials and settings
-      await window.hailfreq.invoke("tokens:save", creds);
-      await window.hailfreq.invoke("settings:set", {
-        userId: creds.userId,
-        lastLoginMethod: "citizenid",
-      });
-
+      // Persistence (tokens:save, servers:update) is handled by AppState's onLoggedIn callback.
+      // Awaiting onLoggedIn ensures that any error from startClient (e.g. crypto init failure)
+      // is surfaced on the Login form rather than silently dropped as an unhandled rejection.
       setError(null);
-      onLoggedIn(creds, null);
+      await onLoggedIn(creds, null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "CitizenID login failed");
     } finally {

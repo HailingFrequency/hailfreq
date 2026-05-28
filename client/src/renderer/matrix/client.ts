@@ -28,7 +28,18 @@ export async function startClient(creds: Credentials): Promise<ClientHandle> {
     cryptoCallbacks,
   });
 
-  await client.initRustCrypto();
+  // Each server's MatrixClient needs its own isolated crypto store.
+  // The matrix-js-sdk rust crypto backend uses a fixed IDB prefix ("matrix-js-sdk")
+  // for ALL clients in the same renderer process, meaning clients would share
+  // and conflict with each other's crypto state.
+  //
+  // Workaround: disable IndexedDB persistence entirely (useIndexedDB: false).
+  // Each client then uses a fresh in-memory store. Sessions are not persisted
+  // across app restarts, so users must complete encryption setup on each launch.
+  //
+  // TODO: Replace this with a per-server storePrefix when matrix-js-sdk exposes
+  // that option at the public API level (tracked upstream).
+  await client.initRustCrypto({ useIndexedDB: false });
   await client.startClient({ initialSyncLimit: 10 });
 
   return {

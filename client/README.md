@@ -9,6 +9,9 @@ After Plan 2, this client supports:
 - Full Matrix end-to-end encryption setup (cross-signing + key backup + Recovery Key)
 - SAS device verification with another signed-in device
 - Auto-resume on relaunch
+- Discord-style multi-server sidebar — be in multiple guilds simultaneously, switch with one click
+- Per-server encryption isolation (each server has its own Recovery Key)
+- In-app unread badges from inactive servers
 - Logout flow
 
 Tactical-radio voice features (multi-net monitor, PTT, priority ducking, admin board) arrive in Plans 4 and beyond.
