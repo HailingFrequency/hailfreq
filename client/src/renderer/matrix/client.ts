@@ -54,6 +54,26 @@ export async function loginWithPassword(
 }
 
 /**
+ * SSO token login (after OIDC flow completes). Returns a Credentials bundle the caller can persist.
+ */
+export async function loginWithToken(
+  homeserverUrl: string,
+  loginToken: string,
+): Promise<Credentials> {
+  const tmp = createClient({ baseUrl: homeserverUrl });
+  const resp = await tmp.login("m.login.token", {
+    token: loginToken,
+    initial_device_display_name: "Hailfreq Desktop",
+  });
+  return {
+    userId: resp.user_id,
+    accessToken: resp.access_token,
+    deviceId: resp.device_id,
+    homeserverUrl,
+  };
+}
+
+/**
  * Probe the homeserver for the list of supported login flows.
  * Used by the login screen to decide whether to show the CitizenID button
  * (only if `m.login.sso` with `org.matrix.msc3824.delegated_oidc_compatibility`

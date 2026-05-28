@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
-import { getLoginFlows, loginWithPassword } from "../matrix/client";
+import { getLoginFlows, loginWithPassword, loginWithToken } from "../matrix/client";
 import type { Credentials } from "../matrix/types";
 
 interface LoginProps {
@@ -47,6 +47,51 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
     }
   }
 
+  async function handleCitizenIdLogin() {
+    setError(null);
+    setBusy(true);
+    try {
+      if (!flows) {
+        throw new Error("Login flows not loaded");
+      }
+
+      // Find CitizenID IDP, fallback to first IDP
+      const idp =
+        flows.ssoIdentityProviders.find(
+          (p) => p.id.toLowerCase() === "citizenid",
+        ) || flows.ssoIdentityProviders[0];
+
+      if (!idp) {
+        throw new Error("No OIDC identity providers available");
+      }
+
+      setError("Waiting for browser…");
+
+      // Start the SSO flow in main process
+      const ssoResult = await window.hailfreq.invoke("oidc:startSsoFlow", {
+        homeserverUrl: serverUrl,
+        idpId: idp.id,
+      });
+
+      // Exchange token for credentials
+      const creds = await loginWithToken(serverUrl, ssoResult.loginToken);
+
+      // Save credentials and settings
+      await window.hailfreq.invoke("tokens:save", creds);
+      await window.hailfreq.invoke("settings:set", {
+        userId: creds.userId,
+        lastLoginMethod: "citizenid",
+      });
+
+      setError(null);
+      onLoggedIn(creds);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "CitizenID login failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!flows && !error) {
     return <Centered>Loading login options…</Centered>;
   }
@@ -63,8 +108,12 @@ export function Login({ serverUrl, onLoggedIn }: LoginProps) {
 
       {/* CitizenID button — wired in Task 13 */}
       {flows?.supportsOidcSso && (
-        <Button variant="primary" disabled title="Wired in Task 13">
-          Sign in with CitizenID (coming soon)
+        <Button
+          variant="primary"
+          disabled={busy}
+          onClick={handleCitizenIdLogin}
+        >
+          {busy ? "Waiting for browser…" : "Sign in with CitizenID"}
         </Button>
       )}
 
