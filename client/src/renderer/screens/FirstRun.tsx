@@ -1,15 +1,10 @@
 import { useState } from "react";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { normalizeUrl } from "./firstRunUtils";
 
 interface FirstRunProps {
   onConfigured: (serverUrl: string) => void;
-}
-
-function normalizeUrl(input: string): string {
-  let s = input.trim().replace(/\/+$/, "");
-  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
-  return s;
 }
 
 async function probeHomeserver(url: string): Promise<{ ok: boolean; reason?: string }> {
