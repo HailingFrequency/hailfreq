@@ -1,4 +1,5 @@
 import type { VoiceEngine } from "./VoiceEngine";
+import { VoiceActivationDetector } from "./voiceActivation";
 
 export type PttMode = "toggle" | "hold" | "voice";
 
@@ -18,6 +19,8 @@ export class PttController {
   private bindings = new Map<string, PttBinding>(); // matrixRoomId → binding
   private unsubscribeHotkeyListener: (() => void) | null = null;
   private unsubscribeNativeListener: (() => void) | null = null;
+  /** Active voice-activation detectors, keyed by matrixRoomId. */
+  private voiceDetectors = new Map<string, VoiceActivationDetector>();
   /** Currently transmitting net (single, since only one net at a time can be active). */
   private transmitting: string | null = null;
 
@@ -86,12 +89,21 @@ export class PttController {
     }
 
     if (opts.mode === "voice") {
+      const micSource = await this.engine.getMicSource();
+      const detector = new VoiceActivationDetector({
+        audioCtx: micSource.context as AudioContext,
+        micSource,
+        thresholdDb: opts.voiceThresholdDb ?? -45,
+        onStart: () => void this.holdStart(opts.matrixRoomId),
+        onStop: () => void this.holdStop(opts.matrixRoomId),
+      });
+      detector.start();
       this.bindings.set(opts.matrixRoomId, {
         matrixRoomId: opts.matrixRoomId,
         mode: "voice",
         voiceThresholdDb: opts.voiceThresholdDb ?? -45,
       });
-      // Task 10C wires the actual voice-activation analyzer
+      this.voiceDetectors.set(opts.matrixRoomId, detector);
       return { ok: true };
     }
 
@@ -101,7 +113,13 @@ export class PttController {
   async unbind(matrixRoomId: string): Promise<void> {
     const existing = this.bindings.get(matrixRoomId);
     if (!existing) return;
-    if (existing.hotkeyId) {
+    if (existing.mode === "voice") {
+      const detector = this.voiceDetectors.get(matrixRoomId);
+      if (detector) {
+        detector.stop();
+        this.voiceDetectors.delete(matrixRoomId);
+      }
+    } else if (existing.hotkeyId) {
       if (existing.mode === "hold") {
         await window.hailfreq.invoke("nativeHotkey:unregisterHold", { id: existing.hotkeyId });
       } else {
@@ -148,6 +166,11 @@ export class PttController {
   }
 
   async shutdown(): Promise<void> {
+    for (const detector of this.voiceDetectors.values()) {
+      detector.stop();
+    }
+    this.voiceDetectors.clear();
+
     for (const binding of this.bindings.values()) {
       if (binding.hotkeyId) {
         if (binding.mode === "hold") {

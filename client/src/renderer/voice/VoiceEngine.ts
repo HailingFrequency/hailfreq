@@ -35,8 +35,10 @@ export class VoiceEngine {
   private listeners: Partial<VoiceEngineEvents> = {};
   /** The Matrix room ID currently being PTT'd into, or null when not transmitting. */
   private activePttNet: string | null = null;
-  /** The captured MediaStream (mic). Allocated lazily on first PTT. */
+  /** The captured MediaStream (mic). Allocated lazily on first PTT or getMicSource(). */
   private micStream: MediaStream | null = null;
+  /** AudioContext source node wrapping the mic stream. Used by voice-activation analysis. */
+  private micSourceNode: MediaStreamAudioSourceNode | null = null;
   /** Hangover timer for priority ducking. */
   private duckHangoverTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -164,10 +166,39 @@ export class VoiceEngine {
     this.activePttNet = null;
   }
 
+  /**
+   * Allocate the mic stream and return an AudioContext source node suitable for
+   * analysis (e.g., voice-activation). Safe to call multiple times — returns the
+   * cached node on subsequent calls. Calling this also pre-warms the mic so the
+   * first PTT is instant.
+   */
+  async getMicSource(): Promise<MediaStreamAudioSourceNode> {
+    this.ensureAudio();
+    if (!this.micStream) {
+      this.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
+      });
+    }
+    if (!this.micSourceNode) {
+      this.micSourceNode = this.audioCtx!.createMediaStreamSource(this.micStream);
+    }
+    return this.micSourceNode;
+  }
+
   async shutdown(): Promise<void> {
     await this.stopPtt();
     for (const id of Array.from(this.nets.keys())) {
       await this.unmonitorNet(id);
+    }
+    if (this.micSourceNode) {
+      this.micSourceNode.disconnect();
+      this.micSourceNode = null;
     }
     if (this.micStream) {
       this.micStream.getTracks().forEach((t) => t.stop());
