@@ -16,7 +16,7 @@ interface NetState {
   volumeGain: GainNode;
   /** Per-net duck gain (0.0–1.0). Auto-modulated by priority ducking. */
   duckGain: GainNode;
-  /** Map participant identity → its source AudioNode (for cleanup on unsubscribe). */
+  /** Map track.sid → its source AudioNode (for cleanup on unsubscribe). Keyed by sid so multiple tracks per participant are handled correctly. */
   trackNodes: Map<string, MediaStreamAudioSourceNode>;
   /** Set of identities currently active-speaking. */
   activeSpeakers: Set<string>;
@@ -254,19 +254,21 @@ export class VoiceEngine {
 
   // --- Internals ---
 
-  private handleTrackSubscribed(state: NetState, track: RemoteAudioTrack, participant: RemoteParticipant): void {
+  private handleTrackSubscribed(state: NetState, track: RemoteAudioTrack, _participant: RemoteParticipant): void {
     if (!this.audioCtx) return;
+    if (!track.sid) return; // sid is undefined for unpublished tracks; skip
     const stream = new MediaStream([track.mediaStreamTrack]);
     const source = this.audioCtx.createMediaStreamSource(stream);
     source.connect(state.volumeGain);
-    state.trackNodes.set(participant.identity, source);
+    state.trackNodes.set(track.sid, source);
   }
 
-  private handleTrackUnsubscribed(state: NetState, _track: RemoteAudioTrack, participant: RemoteParticipant): void {
-    const node = state.trackNodes.get(participant.identity);
+  private handleTrackUnsubscribed(state: NetState, track: RemoteAudioTrack, _participant: RemoteParticipant): void {
+    if (!track.sid) return;
+    const node = state.trackNodes.get(track.sid);
     if (node) {
       node.disconnect();
-      state.trackNodes.delete(participant.identity);
+      state.trackNodes.delete(track.sid);
     }
   }
 
