@@ -15,6 +15,18 @@ interface LegacyV1Settings {
   ui?: { theme?: "dark" };
 }
 
+function deriveLabel(url: string): string {
+  try {
+    const host = new URL(url).hostname;
+    // "radio.stokowski.space" -> "Stokowski"
+    const parts = host.split(".");
+    const root = parts.length >= 2 ? parts[parts.length - 2] : host;
+    return root.charAt(0).toUpperCase() + root.slice(1);
+  } catch {
+    return url;
+  }
+}
+
 /**
  * Pure migration function: converts legacy single-server shape to multi-server shape.
  * Exported for testing (Task 15).
@@ -61,18 +73,6 @@ export const settings = new Store<Settings>({
     store.set("ui", migrated.ui);
   },
 });
-
-function deriveLabel(url: string): string {
-  try {
-    const host = new URL(url).hostname;
-    // "radio.stokowski.space" -> "Stokowski"
-    const parts = host.split(".");
-    const root = parts.length >= 2 ? parts[parts.length - 2] : host;
-    return root.charAt(0).toUpperCase() + root.slice(1);
-  } catch {
-    return url;
-  }
-}
 
 export function addServer(label: string, serverUrl: string): ServerEntry {
   const id = randomUUID();
