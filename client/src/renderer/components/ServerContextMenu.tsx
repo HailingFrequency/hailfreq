@@ -8,15 +8,19 @@ interface Props {
   onClose: () => void;
   onRemove: () => Promise<void>;
   onRename: (newLabel: string) => Promise<void>;
+  onToggleNotifications?: (enabled: boolean) => Promise<void>;
 }
 
 type MenuState = "initial" | "renaming" | "confirming";
 
-export function ServerContextMenu({ server, onClose, onRemove, onRename }: Props) {
+export function ServerContextMenu({ server, onClose, onRemove, onRename, onToggleNotifications }: Props) {
   const [menuState, setMenuState] = useState<MenuState>("initial");
   const [renameInput, setRenameInput] = useState(server.label);
   const [busy, setBusy] = useState(false);
   const [renameError, setRenameError] = useState<string>("");
+
+  // Treat undefined as enabled (default true)
+  const notificationsEnabled = server.notificationsEnabled ?? true;
 
   async function handleRemove() {
     setBusy(true);
@@ -42,6 +46,16 @@ export function ServerContextMenu({ server, onClose, onRemove, onRename }: Props
       onClose();
     } catch (error) {
       setRenameError(error instanceof Error ? error.message : "Failed to rename server");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleToggleNotifications() {
+    if (!onToggleNotifications) return;
+    setBusy(true);
+    try {
+      await onToggleNotifications(!notificationsEnabled);
     } finally {
       setBusy(false);
     }
@@ -99,6 +113,16 @@ export function ServerContextMenu({ server, onClose, onRemove, onRename }: Props
               <Button variant="ghost" onClick={() => setMenuState("renaming")}>
                 Rename…
               </Button>
+              {onToggleNotifications && (
+                <Button
+                  variant="ghost"
+                  onClick={handleToggleNotifications}
+                  disabled={busy}
+                  title={notificationsEnabled ? "Disable OS notifications for this server" : "Enable OS notifications for this server"}
+                >
+                  Notifications: {notificationsEnabled ? "On" : "Off"}
+                </Button>
+              )}
               <Button variant="ghost" onClick={() => setMenuState("confirming")}>
                 Remove from Hailfreq…
               </Button>
