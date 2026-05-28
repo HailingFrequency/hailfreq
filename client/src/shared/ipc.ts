@@ -16,6 +16,10 @@ export interface IpcChannels {
   "tokens:save": { args: [StoredCredentials]; result: void };
   "tokens:load": { args: []; result: StoredCredentials | null };
   "tokens:clear": { args: []; result: void };
+  "oidc:startSsoFlow": {
+    args: [{ homeserverUrl: string; idpId: string }];
+    result: { loginToken: string };
+  };
 }
 
 export type IpcChannelName = keyof IpcChannels;
