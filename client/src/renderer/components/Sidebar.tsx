@@ -3,8 +3,13 @@ import type { ServerEntry } from "@shared/types";
 import { ServerIcon } from "./ServerIcon";
 import { ServerContextMenu } from "./ServerContextMenu";
 
+export interface SidebarServerItem {
+  entry: ServerEntry;
+  unreadCount: number;
+}
+
 interface SidebarProps {
-  servers: ServerEntry[];
+  servers: SidebarServerItem[];
   activeServerId: string;
   onSelect: (serverId: string) => void;
   onAddClicked: () => void;
@@ -17,13 +22,14 @@ export function Sidebar({ servers, activeServerId, onSelect, onAddClicked, onRem
   return (
     <>
       <aside className="flex w-20 flex-col items-center gap-3 border-r border-slate-800 bg-slate-950 py-4">
-        {servers.map((server) => (
+        {servers.map(({ entry, unreadCount }) => (
           <ServerIcon
-            key={server.id}
-            server={server}
-            active={server.id === activeServerId}
-            onClick={() => onSelect(server.id)}
-            onContextMenu={() => setContextMenuFor(server)}
+            key={entry.id}
+            server={entry}
+            active={entry.id === activeServerId}
+            onClick={() => onSelect(entry.id)}
+            onContextMenu={() => setContextMenuFor(entry)}
+            unreadCount={unreadCount}
           />
         ))}
         <button

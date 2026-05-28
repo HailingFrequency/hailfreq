@@ -4,6 +4,9 @@ import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
 import { startClient } from "./matrix/client";
 import { subscribeToVerificationRequests } from "./matrix/verification";
+import { RoomEvent } from "matrix-js-sdk";
+import type { MatrixEvent, Room } from "matrix-js-sdk";
+import type { IRoomTimelineData } from "matrix-js-sdk/lib/models/event-timeline-set";
 import { Sidebar } from "./components/Sidebar";
 import { EmojiVerification } from "./components/EmojiVerification";
 import { AddServer } from "./screens/AddServer";
@@ -30,6 +33,8 @@ interface ServerInstance {
     | { kind: "error"; message: string };
   /** Non-null when an incoming SAS verification request is waiting to be handled. */
   pendingVerification?: VerificationRequest;
+  /** Unread message count for this server while it is not the active server. */
+  unreadCount: number;
 }
 
 interface AppLevelState {
@@ -76,7 +81,7 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
           deviceId: stored.deviceId,
           homeserverUrl: stored.homeserverUrl,
         });
-        return { entry, handle, screen: { kind: "home" } };
+        return { entry, handle, screen: { kind: "home" }, unreadCount: 0 };
       }
     } catch {
       // Token expired, homeserver unreachable, or crypto init failed — fall through to login
@@ -84,7 +89,7 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
     // Clear stale/invalid credentials
     await window.hailfreq.invoke("tokens:clear", { serverId: entry.id });
   }
-  return { entry, screen: { kind: "login" } };
+  return { entry, screen: { kind: "login" }, unreadCount: 0 };
 }
 
 async function validateAccessToken(homeserverUrl: string, accessToken: string): Promise<boolean> {
@@ -196,6 +201,54 @@ export function AppState() {
   }, [signedInClients]);
 
   // -------------------------------------------------------------------------
+  // Per-server unread badge subscriptions
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    const unsubs: Array<() => void> = [];
+
+    for (const [serverId, client] of signedInClients) {
+      const localUserId = client.getUserId();
+
+      const handler = (
+        event: MatrixEvent,
+        _room: Room | undefined,
+        toStartOfTimeline: boolean | undefined,
+        _removed: boolean,
+        data: IRoomTimelineData,
+      ): void => {
+        // Only count live, forward events (not history pagination)
+        if (toStartOfTimeline) return;
+        if (!data.liveEvent) return;
+
+        const eventType = event.getType();
+        if (eventType !== "m.room.message" && eventType !== "m.room.encrypted") return;
+
+        // Skip messages sent by the local user
+        if (localUserId && event.getSender() === localUserId) return;
+
+        setState((prev) => {
+          // Skip if the user is currently viewing this server
+          if (prev.activeServerId === serverId) return prev;
+
+          const existing = prev.servers.get(serverId);
+          if (!existing) return prev;
+          const next = new Map(prev.servers);
+          next.set(serverId, { ...existing, unreadCount: existing.unreadCount + 1 });
+          return { ...prev, servers: next };
+        });
+      };
+
+      client.on(RoomEvent.Timeline, handler);
+      unsubs.push(() => client.off(RoomEvent.Timeline, handler));
+    }
+
+    return () => {
+      unsubs.forEach((u) => u());
+    };
+  }, [signedInClients]);
+
+  // -------------------------------------------------------------------------
   // Callbacks
   // -------------------------------------------------------------------------
 
@@ -211,7 +264,14 @@ export function AppState() {
   }, []);
 
   const handleSelectServer = useCallback((id: string) => {
-    setState((s) => ({ ...s, activeServerId: id, globalScreen: { kind: "active" } }));
+    setState((s) => {
+      const existing = s.servers.get(id);
+      const servers =
+        existing && existing.unreadCount !== 0
+          ? new Map(s.servers).set(id, { ...existing, unreadCount: 0 })
+          : s.servers;
+      return { ...s, servers, activeServerId: id, globalScreen: { kind: "active" } };
+    });
   }, []);
 
   const handleAddClicked = useCallback(() => {
@@ -381,7 +441,10 @@ export function AppState() {
   return (
     <div className="flex h-full">
       <Sidebar
-        servers={Array.from(state.servers.values()).map((s) => s.entry)}
+        servers={Array.from(state.servers.values()).map((s) => ({
+          entry: s.entry,
+          unreadCount: s.unreadCount,
+        }))}
         activeServerId={state.activeServerId}
         onSelect={handleSelectServer}
         onAddClicked={handleAddClicked}
