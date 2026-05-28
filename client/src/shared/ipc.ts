@@ -17,9 +17,9 @@ export interface IpcChannels {
   "servers:remove": { args: [{ serverId: string }]; result: void };
   "servers:setActive": { args: [{ serverId: string }]; result: void };
   "servers:update": { args: [{ serverId: string; patch: Partial<ServerEntry> }]; result: ServerEntry };
-  "tokens:save": { args: [StoredCredentials]; result: void };
-  "tokens:load": { args: []; result: StoredCredentials | null };
-  "tokens:clear": { args: []; result: void };
+  "tokens:save": { args: [{ serverId: string; credentials: StoredCredentials }]; result: void };
+  "tokens:load": { args: [{ serverId: string }]; result: StoredCredentials | null };
+  "tokens:clear": { args: [{ serverId: string }]; result: void };
   "oidc:startSsoFlow": {
     args: [{ homeserverUrl: string; idpId: string }];
     result: { loginToken: string };

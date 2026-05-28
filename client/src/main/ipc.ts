@@ -1,6 +1,6 @@
 import { app, ipcMain } from "electron";
 import { settings, addServer, removeServer, setActiveServer, updateServer } from "./store";
-import { saveCredentials, loadCredentials, clearCredentials } from "./tokens";
+import { saveCredentials, loadCredentials, clearCredentials, migrateLegacyCredentials } from "./tokens";
 import { runSsoFlow } from "./oidc";
 import type { Settings, ServerEntry } from "../shared/types";
 import type { StoredCredentials } from "../shared/ipc";
@@ -30,9 +30,11 @@ export function registerIpcHandlers(): void {
       updateServer(args.serverId, args.patch),
   );
 
-  ipcMain.handle("tokens:save", (_event, creds: StoredCredentials) => saveCredentials(creds));
-  ipcMain.handle("tokens:load", () => loadCredentials());
-  ipcMain.handle("tokens:clear", () => clearCredentials());
+  ipcMain.handle("tokens:save", (_event, args: { serverId: string; credentials: StoredCredentials }) =>
+    saveCredentials(args.serverId, args.credentials),
+  );
+  ipcMain.handle("tokens:load", (_event, args: { serverId: string }) => loadCredentials(args.serverId));
+  ipcMain.handle("tokens:clear", (_event, args: { serverId: string }) => clearCredentials(args.serverId));
 
   ipcMain.handle("oidc:startSsoFlow", (_event, params: { homeserverUrl: string; idpId: string }) =>
     runSsoFlow(params),
