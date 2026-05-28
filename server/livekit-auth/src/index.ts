@@ -1,11 +1,13 @@
 import express, { type Request, type Response } from "express";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 
 const PORT = parseInt(process.env.PORT || "8088", 10);
 const SYNAPSE_URL = mustEnv("SYNAPSE_URL");
 const LIVEKIT_URL = mustEnv("LIVEKIT_URL");
 const LIVEKIT_API_KEY = mustEnv("LIVEKIT_API_KEY");
 const LIVEKIT_API_SECRET = mustEnv("LIVEKIT_API_SECRET");
+
+const roomService = new RoomServiceClient(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
 
 const app = express();
 app.use(express.json({ limit: "32kb" }));
@@ -80,6 +82,52 @@ app.post("/token", async (req: Request, res: Response) => {
     return res.json({ token, url: LIVEKIT_URL });
   } catch (err) {
     console.error("token mint failed:", err);
+    return res.status(500).json({ error: "internal error" });
+  }
+});
+
+app.post("/kick", async (req: Request, res: Response) => {
+  try {
+    const { matrixAccessToken, matrixRoomId, targetUserId } = req.body as {
+      matrixAccessToken?: string;
+      matrixRoomId?: string;
+      targetUserId?: string;
+    };
+
+    if (!matrixAccessToken || !matrixRoomId || !matrixRoomId.startsWith("!") || !targetUserId) {
+      return res.status(400).json({ error: "matrixAccessToken, matrixRoomId, targetUserId required" });
+    }
+
+    // Validate the requester
+    const whoami = await fetch(`${SYNAPSE_URL}/_matrix/client/v3/account/whoami`, {
+      headers: { Authorization: `Bearer ${matrixAccessToken}` },
+    });
+    if (!whoami.ok) return res.status(401).json({ error: "invalid Matrix access token" });
+    const { user_id: requesterId } = (await whoami.json()) as { user_id: string };
+
+    // Verify requester is an admin (PL >= 100) in the room
+    const plResp = await fetch(
+      `${SYNAPSE_URL}/_matrix/client/v3/rooms/${encodeURIComponent(matrixRoomId)}/state/m.room.power_levels/`,
+      { headers: { Authorization: `Bearer ${matrixAccessToken}` } }
+    );
+    if (!plResp.ok) return res.status(403).json({ error: "cannot read room power levels" });
+    const pl = (await plResp.json()) as {
+      users?: Record<string, number>;
+      users_default?: number;
+    };
+    const requesterPl = pl.users?.[requesterId] ?? pl.users_default ?? 0;
+    if (requesterPl < 100) return res.status(403).json({ error: "admin power level required" });
+
+    // Derive LiveKit room name from Matrix room ID (same logic as /token)
+    const colonIdx = matrixRoomId.indexOf(":");
+    const liveKitRoom = colonIdx > 0 ? matrixRoomId.substring(1, colonIdx) : matrixRoomId.substring(1);
+
+    // Kick from LiveKit (chat membership unaffected — Matrix kick is a separate action)
+    await roomService.removeParticipant(liveKitRoom, targetUserId);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("kick failed:", err);
     return res.status(500).json({ error: "internal error" });
   }
 });
