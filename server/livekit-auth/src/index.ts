@@ -73,7 +73,7 @@ app.post("/token", async (req: Request, res: Response) => {
       roomJoin: true,
       canPublish: true,
       canSubscribe: true,
-      canPublishData: true,
+      // canPublishData intentionally omitted — voice nets don't need data channels
     });
 
     const token = await at.toJwt();
