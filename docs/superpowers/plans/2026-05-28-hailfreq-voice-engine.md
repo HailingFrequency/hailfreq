@@ -1853,7 +1853,20 @@ git commit -m "client: voice activation mode (RMS analyzer + hangover-based PTT)
 
 For v1 of Plan 4, each net has a single SFrame key generated at net creation and stored as a Matrix state event of type `org.hailfreq.net.sframe-key` (encrypted via Megolm because the room is encrypted). Members of the room can read the state event and extract the key.
 
-**Limitation accepted for v1:** the key does not rotate on membership changes. A kicked member retains the key locally. v1.5 (later plan) will add rotation.
+**Server-level bans work correctly out of the box.** A banned user has had their Synapse account deactivated by an admin:
+- Their access token is invalidated by Synapse immediately
+- They cannot obtain a new LiveKit JWT (the auth service's whoami check fails)
+- They cannot connect to LiveKit at all (no valid JWT)
+- They cannot read new Matrix events (no valid session)
+A banned user is fully cut off the instant the admin runs the ban action. The static SFrame key has zero relevance — the banned user can't reach any system that uses it.
+
+**The static-key compromise applies only to net-level kicks (Matrix room membership change), and only for forward secrecy.** When an admin kicks a member from a specific net's Matrix room:
+- The kicked member's LiveKit JWT for that room expires within ~6 hours (token TTL)
+- After expiry they cannot rejoin LiveKit (auth service sees they're no longer a room member)
+- BUT: if they captured ciphertext while they were a legitimate member, they can still decrypt that historical traffic with the cached key
+- AND: until their JWT expires, they could in theory still send/receive on that LiveKit room
+
+v1.5 will add **active key rotation on membership change** — when an admin kicks a member, the remaining members rotate the SFrame key and the kicked member's cached key becomes useless for any traffic after the rotation (Megolm-style forward secrecy ratchet). For v1, the realistic mitigation is: admins should use server-level ban for adversarial removals, not net-level kick.
 
 - [ ] **Step 1: Write `client/src/renderer/voice/sframeKeys.ts`**
 
@@ -2948,7 +2961,7 @@ After Task 22, the deliverable is:
 
 **Known v1 limitations (documented elsewhere):**
 - Press-and-hold doesn't work on Wayland Linux (compositor security blocks global key hooks); affected users fall back to tap or voice activation
-- Static per-net SFrame keys (no rotation on kick; v1.5 adds rotation)
+- Static per-net SFrame keys with no rotation on net-level kick — kicked members can still decrypt traffic they captured while they were members (standard forward-secrecy compromise). **Server-level ban is fully effective immediately** and is the recommended action for adversarial removals. v1.5 adds active key rotation for net-level kicks.
 - Voice operates only on the active server (multi-server voice deferred)
 - No chirps, no focused-app PTT, no screen sharing UI
 
