@@ -1,50 +1,55 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
 import { Button } from "../components/Button";
+import { NetListPanel } from "../components/NetListPanel";
+import { CreateNetDialog } from "../components/CreateNetDialog";
 
 interface HomeProps {
   client: MatrixClient;
-  onLogout: () => Promise<void>;
+  onLogout: () => Promise<void> | void;
 }
 
 export function Home({ client, onLogout }: HomeProps) {
-  const [roomCount, setRoomCount] = useState(0);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const update = () => setRoomCount(client.getRooms().length);
-    update();
-    client.on("sync" as any, update);
-    return () => {
-      client.off("sync" as any, update);
-    };
-  }, [client]);
-
-  async function handleLogout() {
-    setBusy(true);
-    try {
-      await onLogout();
-    } finally {
-      setBusy(false);
-    }
-  }
+  const [creating, setCreating] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   return (
-    <div className="flex h-full flex-col p-6">
-      <header className="flex items-baseline justify-between">
+    <div className="flex h-full flex-col">
+      <header className="flex items-center justify-between border-b border-slate-800 px-6 py-3">
         <div>
-          <h1 className="text-2xl font-semibold text-brand-400">Hailfreq</h1>
-          <p className="mt-1 text-xs text-slate-500">
-            Signed in as {client.getSafeUserId()} · {roomCount} rooms
-          </p>
+          <h1 className="text-lg font-semibold text-brand-400">Hailfreq</h1>
+          <p className="text-xs text-slate-500">{client.getSafeUserId()}</p>
         </div>
-        <Button variant="ghost" onClick={handleLogout} disabled={busy}>
-          {busy ? "Logging out…" : "Log out"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            + New net
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={loggingOut}
+            onClick={async () => {
+              setLoggingOut(true);
+              await onLogout();
+            }}
+          >
+            {loggingOut ? "Logging out…" : "Log out"}
+          </Button>
+        </div>
       </header>
-      <div className="mt-12 text-center text-sm text-slate-400">
-        <p>Tactical-radio features coming in Plan 4.</p>
+
+      <div className="flex-1 overflow-auto">
+        <NetListPanel client={client} />
       </div>
+
+      {creating && (
+        <CreateNetDialog
+          client={client}
+          onClose={() => setCreating(false)}
+          onCreated={(_roomId) => {
+            // NetListPanel re-syncs from Matrix events; nothing else to do
+          }}
+        />
+      )}
     </div>
   );
 }
