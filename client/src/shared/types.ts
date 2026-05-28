@@ -39,6 +39,11 @@ export interface ServerEntry {
   lastSyncedMs: number;
   /** Persisted per-net voice preferences for this server. */
   voicePrefs?: NetPreferences;
+  /**
+   * Whether OS desktop notifications are enabled for this server.
+   * Defaults to true when absent (treat undefined as true via ?? true).
+   */
+  notificationsEnabled?: boolean;
 }
 
 export interface Settings {
@@ -61,6 +66,7 @@ declare global {
       onNativeHotkey: (
         cb: (e: { id: string; accelerator: string; direction: "down" | "up" }) => void,
       ) => () => void;
+      onNotifyClicked: (cb: (payload: { serverId?: string }) => void) => () => void;
     };
   }
 }
