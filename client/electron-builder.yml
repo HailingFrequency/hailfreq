@@ -1,0 +1,32 @@
+appId: org.hailfreq.client
+productName: Hailfreq
+artifactName: Hailfreq-${version}-${arch}.${ext}
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.d.ts"
+  - "!**/tsconfig*.json"
+
+linux:
+  target:
+    - AppImage
+  category: Network
+  icon: assets/icon.png
+  synopsis: Privacy-first Matrix desktop client for tactical voice ops
+  description: Hailfreq is a desktop Matrix client built for game communities that need tactical-radio multi-net voice with end-to-end encryption.
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icon.png
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
