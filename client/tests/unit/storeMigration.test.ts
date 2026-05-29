@@ -53,6 +53,7 @@ describe("migrateLegacyShape", () => {
       }],
       activeServerId: "abc",
       ui: { theme: "dark" },
+      focusedAppPtt: { enabled: false, allowlistEntries: ["StarCitizen"] },
     };
     const migrated = migrateLegacyShape(current);
     expect(migrated).toEqual(current);
@@ -77,6 +78,30 @@ describe("migrateLegacyShape", () => {
       autoInviteAllowlist: [],
       autoCloseOnDestruction: true,
     });
+  });
+
+  it("defaults focusedAppPtt when missing from legacy v2 store", () => {
+    const legacyV2: Settings = {
+      servers: [],
+      activeServerId: "",
+      ui: { theme: "dark" },
+    };
+    const migrated = migrateLegacyShape(legacyV2);
+    expect(migrated.focusedAppPtt).toEqual({
+      enabled: false,
+      allowlistEntries: ["StarCitizen"],
+    });
+  });
+
+  it("preserves an existing focusedAppPtt through pass-through migration", () => {
+    const existing: Settings = {
+      servers: [],
+      activeServerId: "",
+      ui: { theme: "dark" },
+      focusedAppPtt: { enabled: true, allowlistEntries: ["StarCitizen", "ElementX"] },
+    };
+    const migrated = migrateLegacyShape(existing);
+    expect(migrated.focusedAppPtt).toEqual(existing.focusedAppPtt);
   });
 
   it("handles a totally fresh store (defaults)", () => {

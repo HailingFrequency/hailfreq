@@ -24,6 +24,13 @@ export interface NetPreferences {
   inboundChirps: Record<string, string>;
 }
 
+/** Global focused-app PTT filter settings. */
+export interface FocusedAppPttSettings {
+  enabled: boolean;
+  /** Case-insensitive substring matches against (processName + " " + title). */
+  allowlistEntries: string[];
+}
+
 /** Per-server Star Citizen integration settings. */
 export interface ScIntegrationSettings {
   /** Opt in to watching the SC Game.log for this server. Default: false. */
@@ -75,6 +82,12 @@ export interface Settings {
    * Machine-global (one SC install per machine).
    */
   scInstallPath?: string;
+  /**
+   * Global focused-app PTT filter. When enabled, PTT only activates while the
+   * foreground window matches an entry in allowlistEntries.
+   * Machine-global (PTT keybind is a global hotkey).
+   */
+  focusedAppPtt?: FocusedAppPttSettings;
 }
 
 declare global {

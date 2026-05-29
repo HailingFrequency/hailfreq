@@ -1,11 +1,12 @@
 import Store from "electron-store";
 import { randomUUID } from "node:crypto";
-import type { Settings, ServerEntry } from "../shared/types";
+import type { Settings, ServerEntry, FocusedAppPttSettings } from "../shared/types";
 
 const defaults: Settings = {
   servers: [],
   activeServerId: "",
   ui: { theme: "dark" },
+  focusedAppPtt: { enabled: false, allowlistEntries: ["StarCitizen"] },
 };
 
 interface LegacyV1Settings {
@@ -64,6 +65,9 @@ export function migrateLegacyShape(raw: unknown): Settings {
       activeServerId: entry.id,
       ui: typed.ui?.theme ? { theme: typed.ui.theme } : { theme: "dark" },
       ...(typeof typed.scInstallPath === "string" ? { scInstallPath: typed.scInstallPath } : {}),
+      focusedAppPtt: typeof typed.focusedAppPtt === "object" && typed.focusedAppPtt !== null
+        ? typed.focusedAppPtt as FocusedAppPttSettings
+        : { enabled: false, allowlistEntries: ["StarCitizen"] },
     };
   }
 
@@ -75,12 +79,14 @@ export function migrateLegacyShape(raw: unknown): Settings {
         ...(s.scIntegration === undefined ? { scIntegration: defaultScIntegration } : {}),
       }))
     : [];
-  return {
+  const settingsWithFocus = {
     servers,
     activeServerId: typeof typed.activeServerId === "string" ? typed.activeServerId : "",
     ui: typed.ui ? { theme: typed.ui.theme ?? "dark" } : { theme: "dark" },
     ...(typeof typed.scInstallPath === "string" ? { scInstallPath: typed.scInstallPath } : {}),
+    focusedAppPtt: typed.focusedAppPtt ?? { enabled: false, allowlistEntries: ["StarCitizen"] },
   };
+  return settingsWithFocus;
 }
 
 export const settings = new Store<Settings>({
