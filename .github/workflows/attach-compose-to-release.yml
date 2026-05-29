@@ -1,0 +1,28 @@
+name: Attach kit compose.yml to release
+
+# Fires whenever a GitHub Release is created (manually via UI or via `gh release create`).
+# Uploads server/compose.yml as a release asset so it's downloadable via the
+# stable URL: https://github.com/HailingFrequency/hailfreq/releases/latest/download/compose.yml
+
+on:
+  release:
+    types: [created, published]
+
+jobs:
+  attach-compose:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.target_commitish }}
+
+      - name: Upload compose.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            server/compose.yml \
+            --clobber
