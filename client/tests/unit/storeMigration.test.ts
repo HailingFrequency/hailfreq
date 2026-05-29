@@ -54,6 +54,7 @@ describe("migrateLegacyShape", () => {
       activeServerId: "abc",
       ui: { theme: "dark" },
       focusedAppPtt: { enabled: false, allowlistEntries: ["StarCitizen"] },
+      bridges: [],
     };
     const migrated = migrateLegacyShape(current);
     expect(migrated).toEqual(current);

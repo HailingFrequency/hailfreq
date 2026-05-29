@@ -24,6 +24,27 @@ export interface NetPreferences {
   inboundChirps: Record<string, string>;
 }
 
+export type BridgeMode = "smart" | "always-on" | "ptt-relay";
+
+export interface BridgeEndpoint {
+  serverId: string;            // ServerEntry.id
+  matrixRoomId: string;        // The net's Matrix room id
+}
+
+export interface BridgeConfig {
+  id: string;                  // crypto.randomUUID()
+  name: string;                // display name, e.g., "Anvil → Aegis Allies"
+  source: BridgeEndpoint;
+  target: BridgeEndpoint;
+  mode: BridgeMode;
+  /** VAD threshold for smart mode, 0..1 (audio RMS). Ignored for other modes. */
+  smartThreshold: number;
+  enabled: boolean;
+  /** Direction: bidirectional means relay both ways with separate engine instances. */
+  bidirectional: boolean;
+  createdMs: number;
+}
+
 /** Global focused-app PTT filter settings. */
 export interface FocusedAppPttSettings {
   enabled: boolean;
@@ -88,6 +109,12 @@ export interface Settings {
    * Machine-global (PTT keybind is a global hotkey).
    */
   focusedAppPtt?: FocusedAppPttSettings;
+  /**
+   * Configured net bridges. Each bridge relays audio between two nets (typically
+   * cross-server). Absent on stores created before this field was added — consumers
+   * default to [] when reading via ?? operator.
+   */
+  bridges?: BridgeConfig[];
 }
 
 declare global {

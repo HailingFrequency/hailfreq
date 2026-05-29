@@ -7,6 +7,7 @@ const defaults: Settings = {
   activeServerId: "",
   ui: { theme: "dark" },
   focusedAppPtt: { enabled: false, allowlistEntries: ["StarCitizen"] },
+  bridges: [],
 };
 
 interface LegacyV1Settings {
@@ -68,6 +69,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
       focusedAppPtt: typeof typed.focusedAppPtt === "object" && typed.focusedAppPtt !== null
         ? typed.focusedAppPtt as FocusedAppPttSettings
         : { enabled: false, allowlistEntries: ["StarCitizen"] },
+      bridges: [],
     };
   }
 
@@ -85,6 +87,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
     ui: typed.ui ? { theme: typed.ui.theme ?? "dark" } : { theme: "dark" },
     ...(typeof typed.scInstallPath === "string" ? { scInstallPath: typed.scInstallPath } : {}),
     focusedAppPtt: typed.focusedAppPtt ?? { enabled: false, allowlistEntries: ["StarCitizen"] },
+    bridges: typed.bridges ?? [],
   };
   return settingsWithFocus;
 }
