@@ -73,6 +73,7 @@ declare global {
         cb: (e: { id: string; accelerator: string; direction: "down" | "up" }) => void,
       ) => () => void;
       onNotifyClicked: (cb: (payload: { serverId?: string }) => void) => () => void;
+      onScLogLine: (cb: (payload: { line: string }) => void) => () => void;
     };
   }
 }

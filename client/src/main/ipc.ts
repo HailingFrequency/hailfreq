@@ -6,6 +6,7 @@ import { registerHotkey, unregisterHotkey, listHotkeys } from "./globalHotkeys";
 import { registerHold, unregisterHold } from "./nativeKeyListener";
 import { listChirps, readChirp, openChirpFolder } from "./chirps";
 import { findScInstallCandidates, validateGameLogPath } from "./scInstallPath";
+import { startWatch, stopWatch } from "./scLogTail";
 import { showNotification } from "./notifications";
 import type { NotifyOptions } from "./notifications";
 import type { Settings, ServerEntry } from "../shared/types";
@@ -70,6 +71,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("sc:findInstall", () => findScInstallCandidates());
   ipcMain.handle("sc:validatePath", (_event, args: { path: string }) => validateGameLogPath(args.path));
+  ipcMain.handle("sc:startWatch", async (_event, args: { gameLogPath: string }) => {
+    if (typeof args.gameLogPath !== "string") throw new Error("gameLogPath must be a string");
+    const path = await import("node:path");
+    if (!path.isAbsolute(args.gameLogPath)) throw new Error("gameLogPath must be an absolute path");
+    if (path.basename(args.gameLogPath) !== "Game.log") throw new Error("gameLogPath must point to Game.log");
+    return startWatch(args.gameLogPath);
+  });
+  ipcMain.handle("sc:stopWatch", () => stopWatch());
 
   ipcMain.handle("notify:show", (_event, opts: NotifyOptions): void => {
     showNotification(opts, () => BrowserWindow.getAllWindows()[0] ?? null);

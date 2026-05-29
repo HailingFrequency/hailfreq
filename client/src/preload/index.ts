@@ -30,6 +30,11 @@ const api = {
     ipcRenderer.on("notify:clicked", handler);
     return () => ipcRenderer.off("notify:clicked", handler);
   },
+  onScLogLine: (cb: (payload: { line: string }) => void) => {
+    const handler = (_e: unknown, payload: { line: string }) => cb(payload);
+    ipcRenderer.on("sc:logLine", handler);
+    return () => ipcRenderer.off("sc:logLine", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("hailfreq", api);

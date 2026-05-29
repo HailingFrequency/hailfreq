@@ -67,6 +67,8 @@ export interface IpcChannels {
   "chirps:openFolder": { args: []; result: string };
   "sc:findInstall": { args: []; result: ScInstallCandidate[] };
   "sc:validatePath": { args: [{ path: string }]; result: boolean };
+  "sc:startWatch": { args: [{ gameLogPath: string }]; result: void };
+  "sc:stopWatch": { args: []; result: void };
 }
 
 export type IpcChannelName = keyof IpcChannels;
