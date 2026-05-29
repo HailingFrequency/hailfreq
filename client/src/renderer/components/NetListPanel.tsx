@@ -28,6 +28,12 @@ interface NetListPanelProps {
    * ShareEngine tracks screen-shares for all monitored nets.
    */
   shareEngine?: ShareEngine;
+  /**
+   * Active remote shares for this server, mirrored from AppState React state.
+   * Using this instead of shareEngine.getActiveShares() ensures NetListPanel
+   * re-renders reactively when remote shares start or end.
+   */
+  activeShares?: ActiveShareSummary[];
   serverEntry: ServerEntry;
   onTransmittingChange: (net: string | null) => void;
   /**
@@ -109,7 +115,7 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
   return prefs;
 }
 
-export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine, serverEntry, onTransmittingChange, focusedAppPtt }: NetListPanelProps) {
+export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine, activeShares = [], serverEntry, onTransmittingChange, focusedAppPtt }: NetListPanelProps) {
   const [nets, setNets] = useState<NetSummary[]>([]);
   const [uiState, setUiState] = useState<Map<string, PerNetUiState>>(new Map());
   // Use the shared engine from AppState when available; fall back to a local
@@ -463,11 +469,10 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
 
   function renderNetRow(net: (typeof nets)[number]) {
     const ui = uiState.get(net.matrixRoomId) ?? defaultUi();
-    // Derive per-row share state
+    // Derive per-row share state from React state (not engine direct read)
+    // so NetListPanel re-renders reactively when remote shares appear/disappear.
     const rowActiveShare =
-      shareEngine
-        ?.getActiveShares()
-        .find((s) => s.matrixRoomId === net.matrixRoomId) ?? null;
+      activeShares.find((s) => s.matrixRoomId === net.matrixRoomId) ?? null;
     const rowLocalShare =
       localShare?.matrixRoomId === net.matrixRoomId ? localShare : null;
     const anyLocalShareActive = localShare !== null;

@@ -1026,7 +1026,7 @@ function ActiveServerView({
   onAddToAllowlist,
   focusedAppPtt,
 }: ActiveServerViewProps) {
-  const { screen, entry, handle, voiceEngine, shareEngine, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
+  const { screen, entry, handle, voiceEngine, shareEngine, activeShares, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
 
   // Expose the Matrix ClientHandle for Plan 6+ E2E tests when running under HAILFREQ_TEST=1.
   // Mirrors the window.__voiceEngine pattern in NetListPanel.
@@ -1127,6 +1127,7 @@ function ActiveServerView({
           client={handle!.client}
           voiceEngine={voiceEngine}
           shareEngine={shareEngine}
+          activeShares={activeShares}
           onLogout={onLogout}
           serverEntry={entry}
           onTransmittingChange={onTransmittingChange}
