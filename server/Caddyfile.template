@@ -17,6 +17,17 @@ $HAILFREQ_DOMAIN {
     respond `{"m.server":"$HAILFREQ_SERVER_HOSTNAME:443"}`
   }
 
+  # Also proxy Matrix client + admin API at the apex for clients that hit
+  # the identity domain directly without doing well-known discovery first.
+  # The well-known delegation above remains the canonical path; this is
+  # belt-and-suspenders so naive clients still connect.
+  handle /_matrix/* {
+    reverse_proxy synapse:8008
+  }
+  handle /_synapse/* {
+    reverse_proxy synapse:8008
+  }
+
   # Landing fallback for anyone hitting the apex in a browser
   handle {
     respond "Hailfreq — use a Matrix client and enter $HAILFREQ_DOMAIN as the server URL." 200
