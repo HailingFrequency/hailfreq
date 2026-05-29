@@ -1,6 +1,32 @@
 name: hailfreq
 
 services:
+  bootstrap:
+    image: docker.io/alpine:3.22
+    container_name: hailfreq-bootstrap
+    restart: "no"
+    volumes:
+      - hailfreq-secrets:/secrets
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -f /secrets/.bootstrap-complete ]; then
+          echo "→ Secrets already generated, skipping bootstrap"
+          exit 0
+        fi
+        echo "→ Generating secrets..."
+        apk add --quiet --no-cache openssl
+        for s in postgres_password synapse_registration_shared_secret synapse_macaroon_secret synapse_form_secret livekit_api_key livekit_api_secret turn_shared_secret; do
+          openssl rand -hex 32 > /secrets/$$s
+          chmod 600 /secrets/$$s
+        done
+        touch /secrets/.bootstrap-complete
+        echo "→ Generated 7 secrets in /secrets"
+    networks:
+      - hailfreq
+
   postgres:
     image: docker.io/postgres:16-alpine
     container_name: hailfreq-postgres
@@ -136,6 +162,7 @@ volumes:
   synapse_data:
   caddy_data:
   caddy_config:
+  hailfreq-secrets:
 
 configs:
   caddyfile:
