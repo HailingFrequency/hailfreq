@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, useCallback, type Dispatch, type SetStateAction } from "react";
-import type { FocusedAppPttSettings, ScIntegrationSettings, ServerEntry } from "@shared/types";
+import type { BridgeConfig, FocusedAppPttSettings, ScIntegrationSettings, ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
 import { startClient } from "./matrix/client";
@@ -24,6 +24,9 @@ import { VoiceEngine } from "./voice/VoiceEngine";
 import { ScIntegration } from "./sc/ScIntegration";
 import { ShareEngine } from "./share/ShareEngine";
 import type { ActiveShareSummary, LocalShareState } from "./share/types";
+import { BridgeEngine } from "./bridge/BridgeEngine";
+import type { BridgeRunnerStatus } from "./bridge/types";
+import { playBridgeChirp } from "./bridge/bridgeChirp";
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -93,6 +96,16 @@ interface AppLevelState {
   scInstallPath?: string;
   /** Global focused-app PTT filter. Loaded once at boot from settings. */
   focusedAppPtt?: FocusedAppPttSettings;
+  /**
+   * Configured net bridges. Loaded at boot from settings; updated via
+   * handleSaveBridges. Global (one set of bridges spans all servers).
+   */
+  bridges: BridgeConfig[];
+  /**
+   * Live runner statuses from BridgeEngine, keyed by bridge id.
+   * Updated reactively as BridgeEngine fires onRunnerStatusChanged events.
+   */
+  bridgeRunnerStatuses: Map<string, { forward: BridgeRunnerStatus; reverse: BridgeRunnerStatus | null }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +225,25 @@ export function AppState() {
     activeServerId: "",
     globalScreen: { kind: "loading" },
     transmittingNet: null,
+    bridges: [],
+    bridgeRunnerStatuses: new Map(),
   });
+
+  /**
+   * Ref that always holds the latest AppLevelState. Used by closures that are
+   * created once on mount (e.g., BridgeEngine's getRoom callback) but need to
+   * read current values as state changes over time.
+   */
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  });
+
+  /**
+   * Single global BridgeEngine instance (bridges span servers, not per-server).
+   * Created once on mount; shut down on unmount.
+   */
+  const bridgeEngineRef = useRef<BridgeEngine | null>(null);
 
   // Boot: load settings, initialise one ServerInstance per configured server.
   useEffect(() => {
@@ -240,7 +271,7 @@ export function AppState() {
       const globalScreen: AppLevelState["globalScreen"] =
         settings.servers.length === 0 ? { kind: "no-servers" } : { kind: "active" };
 
-      setState({ servers, activeServerId, globalScreen, transmittingNet: null, scInstallPath: settings.scInstallPath, focusedAppPtt: settings.focusedAppPtt });
+      setState({ servers, activeServerId, globalScreen, transmittingNet: null, scInstallPath: settings.scInstallPath, focusedAppPtt: settings.focusedAppPtt, bridges: settings.bridges ?? [], bridgeRunnerStatuses: new Map() });
     })();
 
     // Best-effort shutdown of all resources when the component unmounts.
@@ -256,6 +287,62 @@ export function AppState() {
       });
     };
   }, []);
+
+  // -------------------------------------------------------------------------
+  // BridgeEngine lifecycle
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create the single global BridgeEngine on mount; wire status events into
+   * React state; shut down on unmount. The getRoom closure reads from stateRef
+   * so it always sees the current servers map even though it is created once.
+   */
+  useEffect(() => {
+    const engine = new BridgeEngine({
+      getRoom: (serverId, matrixRoomId) => {
+        const instance = stateRef.current.servers.get(serverId);
+        return instance?.voiceEngine?.getLiveKitRoom(matrixRoomId) ?? null;
+      },
+      // playBridgeChirp: target room args are ignored by the current Web Audio
+      // implementation — the chirp plays on the local audio output regardless.
+      playBridgeChirp: (_targetServerId, _targetMatrixRoomId) => {
+        playBridgeChirp();
+      },
+    });
+
+    engine.on({
+      onRunnerStatusChanged: (summary) => {
+        setState((prev) => {
+          const map = new Map(prev.bridgeRunnerStatuses);
+          const cur = map.get(summary.bridgeId) ?? {
+            forward: "stopped" as BridgeRunnerStatus,
+            reverse: null,
+          };
+          const updated =
+            summary.direction === "forward"
+              ? { ...cur, forward: summary.status }
+              : { ...cur, reverse: summary.status };
+          map.set(summary.bridgeId, updated);
+          return { ...prev, bridgeRunnerStatuses: map };
+        });
+      },
+    });
+
+    bridgeEngineRef.current = engine;
+
+    return () => {
+      void engine.shutdown();
+      bridgeEngineRef.current = null;
+    };
+  }, []);
+
+  /**
+   * Sync bridge configs to the engine whenever state.bridges changes.
+   * setConfigs is idempotent — it diffs against the current active set.
+   */
+  useEffect(() => {
+    void bridgeEngineRef.current?.setConfigs(state.bridges);
+  }, [state.bridges]);
 
   // -------------------------------------------------------------------------
   // Per-server verification subscriptions
@@ -537,6 +624,19 @@ export function AppState() {
     // Re-run when signed-in servers, their entries, or the SC path changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedInWithEngine, state.scInstallPath]);
+
+  /**
+   * Notify BridgeEngine when the set of available LiveKit rooms may have changed
+   * (servers added/removed, sign-in/out, monitored nets change). The engine will
+   * attempt to start any enabled bridges whose rooms are now available.
+   */
+  useEffect(() => {
+    void bridgeEngineRef.current?.refreshRoomAvailability();
+    // signedInWithEngine changes whenever servers/handles/voiceEngines change;
+    // that covers login, logout, server add/remove, and monitored-net changes
+    // (VoiceEngine only creates a Room when a net is monitored).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedInWithEngine]);
 
   // -------------------------------------------------------------------------
   // Callbacks
@@ -903,6 +1003,28 @@ export function AppState() {
     },
     [],
   );
+
+  /**
+   * Save the global bridge configuration. Called by the AdminBoard (Task 9)
+   * when the user adds, edits, enables/disables, or removes a bridge.
+   * Persists to settings then syncs into React state (which triggers the
+   * bridges→setConfigs effect automatically).
+   *
+   * NOTE: wired to AdminBoard in Task 9. Exposed on window under test flag so
+   * noUnusedLocals does not reject it before Task 9 wires it into the render tree.
+   */
+  const handleSaveBridges = useCallback(
+    async (bridges: BridgeConfig[]): Promise<void> => {
+      await window.hailfreq.invoke("settings:setBridges", { bridges });
+      setState((prev) => ({ ...prev, bridges }));
+    },
+    [],
+  );
+  // Prevent noUnusedLocals rejection until Task 9 passes handleSaveBridges into
+  // the AdminBoard render tree. Remove this block when Task 9 is complete.
+  if (process.env.HAILFREQ_TEST === "1") {
+    (window as unknown as Record<string, unknown>).__handleSaveBridges = handleSaveBridges;
+  }
 
   /**
    * Save per-server SC integration settings and (optionally) the global
