@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
-import type { FocusedAppPttSettings, ServerEntry } from "@shared/types";
+import type { BridgeConfig, FocusedAppPttSettings, ServerEntry } from "@shared/types";
+import type { BridgeRunnerStatus } from "../bridge/types";
 import { Button } from "../components/Button";
 import { NetListPanel } from "../components/NetListPanel";
 import { CreateNetDialog } from "../components/CreateNetDialog";
@@ -62,6 +63,12 @@ interface HomeProps {
   onAddToAllowlist: (rsiHandle: string) => Promise<void>;
   /** Global focused-app PTT filter settings. Forwarded to NetListPanel. */
   focusedAppPtt?: FocusedAppPttSettings;
+  /** Global bridge configs. Forwarded to AdminBoard. */
+  bridges: BridgeConfig[];
+  /** Live runner statuses from BridgeEngine. Forwarded to AdminBoard. */
+  bridgeRunnerStatuses: Map<string, { forward: BridgeRunnerStatus; reverse: BridgeRunnerStatus | null }>;
+  /** Save updated bridge configs. Forwarded to AdminBoard. */
+  onSaveBridges: (bridges: BridgeConfig[]) => Promise<void>;
 }
 
 export function Home({
@@ -77,6 +84,9 @@ export function Home({
   onDismissCrewBoardingToast,
   onAddToAllowlist,
   focusedAppPtt,
+  bridges,
+  bridgeRunnerStatuses,
+  onSaveBridges,
 }: HomeProps) {
   const [creating, setCreating] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -128,7 +138,15 @@ export function Home({
 
   // When admin board is open, render it full-screen instead of the normal content
   if (showAdmin) {
-    return <AdminBoard client={client} onClose={() => setShowAdmin(false)} />;
+    return (
+      <AdminBoard
+        client={client}
+        bridges={bridges}
+        runnerStatuses={bridgeRunnerStatuses}
+        onSaveBridges={onSaveBridges}
+        onClose={() => setShowAdmin(false)}
+      />
+    );
   }
 
   return (

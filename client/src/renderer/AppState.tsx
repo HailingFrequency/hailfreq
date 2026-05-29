@@ -1018,11 +1018,6 @@ export function AppState() {
     },
     [],
   );
-  // Prevent noUnusedLocals rejection until Task 9 passes handleSaveBridges into
-  // the AdminBoard render tree. Remove this block when Task 9 is complete.
-  if (process.env.HAILFREQ_TEST === "1") {
-    (window as unknown as Record<string, unknown>).__handleSaveBridges = handleSaveBridges;
-  }
 
   /**
    * Save per-server SC integration settings and (optionally) the global
@@ -1117,6 +1112,9 @@ export function AppState() {
             onDismissCrewBoardingToast={makeDismissCrewBoardingToast(activeInstance.entry.id)}
             onAddToAllowlist={makeAddToAllowlist(activeInstance.entry.id)}
             focusedAppPtt={state.focusedAppPtt}
+            bridges={state.bridges}
+            bridgeRunnerStatuses={state.bridgeRunnerStatuses}
+            onSaveBridges={handleSaveBridges}
           />
         ) : (
           <Centered>No server selected.</Centered>
@@ -1143,6 +1141,9 @@ interface ActiveServerViewProps {
   onDismissCrewBoardingToast: (toastId: string) => void;
   onAddToAllowlist: (rsiHandle: string) => Promise<void>;
   focusedAppPtt?: FocusedAppPttSettings;
+  bridges: BridgeConfig[];
+  bridgeRunnerStatuses: Map<string, { forward: BridgeRunnerStatus; reverse: BridgeRunnerStatus | null }>;
+  onSaveBridges: (bridges: BridgeConfig[]) => Promise<void>;
 }
 
 function ActiveServerView({
@@ -1158,6 +1159,9 @@ function ActiveServerView({
   onDismissCrewBoardingToast,
   onAddToAllowlist,
   focusedAppPtt,
+  bridges,
+  bridgeRunnerStatuses,
+  onSaveBridges,
 }: ActiveServerViewProps) {
   const { screen, entry, handle, voiceEngine, shareEngine, activeShares, localShare, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
 
@@ -1269,6 +1273,9 @@ function ActiveServerView({
           onDismissCrewBoardingToast={onDismissCrewBoardingToast}
           onAddToAllowlist={onAddToAllowlist}
           focusedAppPtt={focusedAppPtt}
+          bridges={bridges}
+          bridgeRunnerStatuses={bridgeRunnerStatuses}
+          onSaveBridges={onSaveBridges}
         />
       );
 
