@@ -509,3 +509,45 @@ Implemented in Plan 8b. Adds Discord-style screen sharing to Hailfreq nets, end-
 - No annotation, recording, or remote control
 - No admin-board "disable sharing" policy yet — any monitoring member can share
 - Bandwidth: screen video over SFrame is heavy. Default constraints cap at 1920x1080 / 30fps; finer control deferred
+
+## 16. Net Bridges (Hailfreq v1.5 feature)
+
+Implemented in Plan 8c. Resolves spec §11 open questions: default mode = smart (VAD-driven), no sequence-number dedup in v1.5 (operators coordinate manually via visible status indicators), receiver attribution = bridge chirp on operator's local output + `(via <bridge name>)` participant identity suffix in the target net.
+
+### Architecture
+
+- A global `BridgeEngine` (one instance, lives at AppState scope — not per-server, because a bridge spans servers) holds active bridge configs and runs the relay loops
+- Per direction, a `BridgeRunner` subscribes to the source room's remote audio tracks and, per mode, republishes them to the target room as the bridge operator's `LocalAudioTrack`
+- The target room's `ExternalE2EEKeyProvider` re-encrypts on publish using the target net's SFrame key
+- Bridge configs are persisted in local Settings (`Settings.bridges: BridgeConfig[]`); no Matrix state, no cross-machine sync in v1.5
+
+### Three modes
+
+| Mode | Behavior | Bandwidth | When to use |
+|---|---|---|---|
+| `smart` (default) | Open relay when source-net RMS exceeds `smartThreshold` (default 0.02). VAD-driven with 800ms hangover. | Medium | Most cases — natural-sounding allied comms with idle-channel suppression |
+| `always-on` | Continuously relay all source audio | High | Tight-knit allied ops where you want zero-friction always-listening |
+| `ptt-relay` | RMS-based gate with high threshold (0.08) and short hangover (300ms) — acts as PTT detection | Low | Allied org with high background chatter where you only care about explicit calls |
+
+### Receiver attribution
+
+When a relay opens, the operator's local audio output plays a brief 2-tone "bridge active" chirp (440Hz → 880Hz, 150ms total). Receivers in the target net see the operator's published track named `(via <bridge name>)`, making it visually obvious that the audio is bridged.
+
+The chirp plays on the OPERATOR'S local output (their own audible confirmation), not in the relayed audio. Receiver-side audible attribution (chirp inside the published stream) would require PCM injection into the LocalAudioTrack; the visible identity suffix is sufficient for v1.5.
+
+### Privacy posture
+
+- Bridge operator can decrypt both nets (they hold both SFrame keys). This is intrinsic — bridges are an operator-trust feature.
+- Receivers in the target net see clear visual indication that audio is bridged (identity suffix in their participant list).
+- Bridge configs never leave the operator's machine.
+- A bridge can be disabled (toggle off) at any time without deleting the config.
+
+### Known limitations (v1.5)
+
+- No sequence-number deduplication when multiple operators run the same bridge; receivers hear duplicates briefly. Operators see status indicators and coordinate manually.
+- No auto-failover (if operator's machine crashes mid-bridge, another operator's bridge config must be manually enabled)
+- No bridge config sync across machines / devices (per-machine local storage only)
+- No text-message relay (voice only)
+- No screen-share relay
+- Bridge-active chirp plays on operator's local output only, not injected into the relayed audio
+- Smart-mode and ptt-relay use a shared VAD implementation; LiveKit's native speaking detection is not used to keep the relay independent of remote VAD smoothing
