@@ -24,6 +24,16 @@ export interface NetPreferences {
   inboundChirps: Record<string, string>;
 }
 
+/** Per-server Star Citizen integration settings. */
+export interface ScIntegrationSettings {
+  /** Opt in to watching the SC Game.log for this server. Default: false. */
+  enabled: boolean;
+  /** RSI handles to auto-invite without confirmation prompt. */
+  autoInviteAllowlist: string[];
+  /** Auto-close ship-net on detected ship destruction. Default: true. */
+  autoCloseOnDestruction: boolean;
+}
+
 export interface ServerEntry {
   /** Generated UUID. Stable identity for a configured server. */
   id: string;
@@ -44,6 +54,12 @@ export interface ServerEntry {
    * Defaults to true when absent (treat undefined as true via ?? true).
    */
   notificationsEnabled?: boolean;
+  /**
+   * Star Citizen integration settings for this server.
+   * Absent on stores created before this field was added — consumers
+   * default to { enabled: false, ... } when reading via ?? operator.
+   */
+  scIntegration?: ScIntegrationSettings;
 }
 
 export interface Settings {

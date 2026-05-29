@@ -57,6 +57,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
         outboundChirps: {},
         inboundChirps: {},
       },
+      scIntegration: { enabled: false, autoInviteAllowlist: [], autoCloseOnDestruction: true },
     };
     return {
       servers: [entry],
@@ -66,9 +67,16 @@ export function migrateLegacyShape(raw: unknown): Settings {
     };
   }
 
-  // Already multi-server shape or empty: pass through
+  // Already multi-server shape or empty: pass through, defaulting scIntegration on any entry that lacks it
+  const defaultScIntegration = { enabled: false, autoInviteAllowlist: [], autoCloseOnDestruction: true };
+  const servers = Array.isArray(typed.servers)
+    ? typed.servers.map((s) => ({
+        ...s,
+        ...(s.scIntegration === undefined ? { scIntegration: defaultScIntegration } : {}),
+      }))
+    : [];
   return {
-    servers: Array.isArray(typed.servers) ? typed.servers : [],
+    servers,
     activeServerId: typeof typed.activeServerId === "string" ? typed.activeServerId : "",
     ui: typed.ui ? { theme: typed.ui.theme ?? "dark" } : { theme: "dark" },
     ...(typeof typed.scInstallPath === "string" ? { scInstallPath: typed.scInstallPath } : {}),
@@ -111,6 +119,7 @@ export function addServer(label: string, serverUrl: string): ServerEntry {
       outboundChirps: {},
       inboundChirps: {},
     },
+    scIntegration: { enabled: false, autoInviteAllowlist: [], autoCloseOnDestruction: true },
   };
   const servers = settings.get("servers");
   settings.set("servers", [...servers, entry]);
