@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/HailingFrequency/hailfreq/blob/master/SECURITY.md
+    about: Do NOT open a public issue. See SECURITY.md for the private disclosure channel.
+  - name: Test-server access request
+    url: https://github.com/HailingFrequency/hailfreq/issues/new?labels=access-request&title=%5Baccess-request%5D+
+    about: Open an issue with [access-request] in the title if you want to join the test server.

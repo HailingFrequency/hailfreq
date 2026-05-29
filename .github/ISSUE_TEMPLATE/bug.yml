@@ -1,0 +1,78 @@
+name: Bug report
+description: Something is broken or behaving unexpectedly.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please fill in everything you can — vague reports are very hard to act on.
+
+  - type: input
+    id: version
+    attributes:
+      label: Hailfreq version
+      description: From Settings → About, or the installer filename (e.g., `0.1.0`)
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux (X11)
+        - Linux (Wayland)
+        - Windows 10
+        - Windows 11
+        - Other (note in details)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what went wrong?
+      placeholder: |
+        I clicked Share on the Allies net, picked my second monitor in the source picker, and instead of starting the share, the app crashed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: The share to start and show 🔴 Sharing on the net row.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: A numbered list, minimal sequence. The more reproducible, the faster the fix.
+      placeholder: |
+        1. Sign in to test server
+        2. Monitor the Allies net
+        3. Click Share
+        4. Pick second monitor in picker
+        5. Click "Share" button — app crashes
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output / logs
+      description: |
+        Renderer console: View → Toggle Developer Tools → Console tab. Copy any red errors.
+        Main process logs: leave blank if unsure — we'll ask if needed.
+      render: text
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Other context
+      description: Screenshots, related issues, anything else relevant.

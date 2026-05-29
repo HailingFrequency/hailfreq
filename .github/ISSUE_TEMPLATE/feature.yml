@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest a new feature or an enhancement to an existing one.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Before submitting, please skim the design spec at
+        `docs/superpowers/specs/2026-05-26-hailfreq-design.md`, particularly §10 (Out of Scope)
+        — some areas are intentionally not in scope and proposals for them are unlikely to land.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the user pain. Not the proposed solution — the underlying problem.
+      placeholder: |
+        When I'm switching between Hailfreq and the SC client, I can't tell at a glance which net is
+        currently transmitting because the tray icon doesn't change.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Your proposed solution
+      description: How would you solve it? Sketch the UX or the API.
+      placeholder: |
+        Tray icon flashes (or changes color) when any monitored net is currently transmitting audio
+        to the local user (i.e., a peer is speaking). Click reveals which net it was.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      placeholder: A persistent overlay window; a per-net OS notification on first transmission.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: How much of the user base would benefit?
+      options:
+        - Just my use case
+        - A handful of users
+        - Most users
+        - Everyone
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Other context
+      description: Mockups, links, references.

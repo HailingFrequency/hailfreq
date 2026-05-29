@@ -1,0 +1,59 @@
+name: Test-server access request
+description: Request access to the Hailfreq test server.
+title: "[access-request] "
+labels: ["access-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The test server is invite-only. Fill this out and the maintainer will reply with the
+        server URL + login instructions if access is granted.
+
+  - type: input
+    id: rsi-handle
+    attributes:
+      label: Your RSI handle (Star Citizen account name)
+      description: For CitizenID verification. Used to confirm you're a real SC player.
+      placeholder: e.g. Rocktato
+    validations:
+      required: true
+
+  - type: textarea
+    id: who
+    attributes:
+      label: Who are you?
+      description: Brief context. Are you in an SC org? How did you find Hailfreq? Anything else relevant.
+      placeholder: |
+        I'm in Anvil Aerospace Allies. Found Hailfreq via the SC subreddit. Want to test the
+        Star Citizen integration with a friend on weekend ops.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: testing-focus
+    attributes:
+      label: What do you most want to test?
+      multiple: true
+      options:
+        - Voice (PTT modes, priority ducking)
+        - Star Citizen integration (Game.log ship-nets)
+        - Screen sharing
+        - Net bridges (you need to be in an SC org with allied-org coordination needs)
+        - Multi-server (you're a member of multiple SC orgs)
+        - General use
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS
+      placeholder: e.g. Linux X11 (Fedora 41), Windows 11
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Optional. Any specific feature you want to stress-test, or specific bugs you've seen.

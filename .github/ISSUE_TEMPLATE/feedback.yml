@@ -1,0 +1,36 @@
+name: Feedback / general comment
+description: Share what's working, what feels off, or general impressions.
+title: "[feedback] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feedback that isn't a bug or a specific feature request is welcome here. Things like
+        "the new bridge UX feels confusing" or "this would be perfect except for X" land here.
+
+  - type: textarea
+    id: feedback
+    attributes:
+      label: What's on your mind?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of feedback is this?
+      options:
+        - UX confusion
+        - Something that works well (positive)
+        - Documentation gap
+        - General impression
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Hailfreq version (optional)
+      placeholder: "0.1.0"
