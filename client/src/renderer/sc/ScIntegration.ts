@@ -23,6 +23,11 @@ export class ScIntegration {
   private serverEntry: ServerEntry;
   private watcher: ScWatcher | null = null;
   private listeners: ScIntegrationEvents = {};
+  private pendingShipNets = new Map<string, Promise<string>>();
+
+  private shipNetKey(shipType: string, owner: string): string {
+    return `${shipType}::${owner}`;
+  }
 
   constructor(client: MatrixClient, engine: VoiceEngine, serverEntry: ServerEntry) {
     this.client = client;
@@ -61,19 +66,32 @@ export class ScIntegration {
   }
 
   private async handleOwnShipBoarded(shipType: string, ownerNickname: string): Promise<void> {
-    const ownerMatrixId = this.client.getSafeUserId();
-    let roomId = findShipNetByShip(this.client, shipType, ownerNickname);
-    if (!roomId) {
-      roomId = await createShipNet(this.client, {
-        shipType,
-        ownerRsi: ownerNickname,
-        ownerMatrixId,
-      });
-      const keyBytes = generateSframeKey();
-      await uploadSframeKey(this.client, roomId, keyBytes);
-      this.listeners.onShipNetCreated?.(roomId);
+    try {
+      const key = this.shipNetKey(shipType, ownerNickname);
+      const creation = (async () => {
+        const existing = findShipNetByShip(this.client, shipType, ownerNickname);
+        if (existing) return existing;
+        const ownerMatrixId = this.client.getSafeUserId();
+        const roomId = await createShipNet(this.client, {
+          shipType,
+          ownerRsi: ownerNickname,
+          ownerMatrixId,
+        });
+        const keyBytes = generateSframeKey();
+        await uploadSframeKey(this.client, roomId, keyBytes);
+        this.listeners.onShipNetCreated?.(roomId);
+        return roomId;
+      })();
+      this.pendingShipNets.set(key, creation);
+      try {
+        const roomId = await creation;
+        await this.engine.monitorNet({ matrixRoomId: roomId, priority: 60 });
+      } finally {
+        this.pendingShipNets.delete(key);
+      }
+    } catch (err) {
+      console.error("[ScIntegration] handleOwnShipBoarded failed:", err);
     }
-    await this.engine.monitorNet({ matrixRoomId: roomId, priority: 60 });
   }
 
   private async handleCrewJoined(
@@ -81,26 +99,36 @@ export class ScIntegration {
     shipType: string,
     ownerNickname: string,
   ): Promise<void> {
-    const shipNetRoomId = findShipNetByShip(this.client, shipType, ownerNickname);
-    if (!shipNetRoomId) return;
+    try {
+      const key = this.shipNetKey(shipType, ownerNickname);
+      const pending = this.pendingShipNets.get(key);
+      const shipNetRoomId = pending
+        ? await pending
+        : findShipNetByShip(this.client, shipType, ownerNickname);
+      if (!shipNetRoomId) return;
 
-    const matrixUserId = await lookupMatrixIdByRsiHandle(this.client, crewNickname);
+      const matrixUserId = await lookupMatrixIdByRsiHandle(this.client, crewNickname);
 
-    this.listeners.onCrewBoarded?.({
-      rsiHandle: crewNickname,
-      matrixUserId,
-      shipNetRoomId,
-    });
+      this.listeners.onCrewBoarded?.({
+        rsiHandle: crewNickname,
+        matrixUserId,
+        shipNetRoomId,
+      });
 
-    const allowed = this.serverEntry.scIntegration?.autoInviteAllowlist.some(
-      (h) => h.toLowerCase() === crewNickname.toLowerCase(),
-    );
-    if (allowed && matrixUserId) {
-      try {
-        await this.client.invite(shipNetRoomId, matrixUserId);
-      } catch (err) {
-        console.error("auto-invite failed:", err);
+      const allowed = this.serverEntry.scIntegration?.autoInviteAllowlist
+        ?.some((h) => h.toLowerCase() === crewNickname.toLowerCase());
+      if (allowed && matrixUserId) {
+        try {
+          await this.client.invite(shipNetRoomId, matrixUserId);
+        } catch (err) {
+          console.error(
+            `[ScIntegration] auto-invite failed — user: ${matrixUserId}, room: ${shipNetRoomId}, handle: ${crewNickname}`,
+            err,
+          );
+        }
       }
+    } catch (err) {
+      console.error("[ScIntegration] handleCrewJoined failed:", err);
     }
   }
 
@@ -108,17 +136,21 @@ export class ScIntegration {
     shipType: string,
     eventOwner: string | null,
   ): Promise<void> {
-    if (!this.serverEntry.scIntegration?.autoCloseOnDestruction) return;
-    // Prefer the owner extracted from the destruction event; fall back to the
-    // nickname the watcher recorded at login time (destruction events may omit
-    // the owner field in some log versions).
-    const ownerNickname = eventOwner ?? this.watcher?.getLocalNickname();
-    if (!ownerNickname) return;
-    const shipNetRoomId = findShipNetByShip(this.client, shipType, ownerNickname);
-    if (!shipNetRoomId) return;
-    await this.engine.unmonitorNet(shipNetRoomId);
-    // v1: stop monitoring only. Tombstone + leave is reserved for v1.5 behind
-    // an "auto-tombstone on destruction" settings toggle.
-    this.listeners.onShipNetClosed?.(shipNetRoomId);
+    try {
+      if (!this.serverEntry.scIntegration?.autoCloseOnDestruction) return;
+      // Prefer the owner extracted from the destruction event; fall back to the
+      // nickname the watcher recorded at login time (destruction events may omit
+      // the owner field in some log versions).
+      const ownerNickname = eventOwner ?? this.watcher?.getLocalNickname();
+      if (!ownerNickname) return;
+      const shipNetRoomId = findShipNetByShip(this.client, shipType, ownerNickname);
+      if (!shipNetRoomId) return;
+      await this.engine.unmonitorNet(shipNetRoomId);
+      // v1: stop monitoring only. Tombstone + leave is reserved for v1.5 behind
+      // an "auto-tombstone on destruction" settings toggle.
+      this.listeners.onShipNetClosed?.(shipNetRoomId);
+    } catch (err) {
+      console.error("[ScIntegration] handleShipDestroyed failed:", err);
+    }
   }
 }
