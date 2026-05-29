@@ -29,26 +29,42 @@ if [[ -z "$USERNAME" ]]; then
   read -rp "Admin username: " USERNAME
 fi
 
-# Verify Synapse is running
-if ! $COMPOSE ps --format json synapse 2>/dev/null | python3 -c '
+# Verify Synapse is running.
+# docker compose ps accepts a service-name arg; podman compose ps does not,
+# so fetch all containers and filter by the compose service label.
+PS_JSON=$($COMPOSE ps --format json 2>/dev/null || echo "")
+if ! python3 -c '
 import sys, json
-raw = sys.stdin.read().strip()
-if not raw:
+
+raw = """'"$PS_JSON"'"""
+
+if not raw.strip():
     sys.exit(1)
+
 try:
     data = json.loads(raw)
-    if isinstance(data, list):
-        obj = data[-1] if data else {}
-    else:
-        obj = data
+    if isinstance(data, dict):
+        data = [data]
+    elif not isinstance(data, list):
+        data = []
 except json.JSONDecodeError:
-    lines = [l for l in raw.splitlines() if l.strip()]
-    try:
-        obj = json.loads(lines[-1])
-    except Exception:
-        sys.exit(1)
-state = obj.get("State") or obj.get("state") or ""
-sys.exit(0 if state == "running" else 1)
+    data = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if line:
+            try:
+                data.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+
+for item in data:
+    labels = item.get("Labels") or {}
+    svc_label = labels.get("com.docker.compose.service") or labels.get("io.podman.compose.service") or ""
+    if svc_label == "synapse":
+        state = item.get("State") or item.get("state") or ""
+        sys.exit(0 if state == "running" else 1)
+
+sys.exit(1)
 ' 2>/dev/null; then
   echo "Error: synapse container is not running. Bring up the stack first: $COMPOSE up -d"
   exit 2

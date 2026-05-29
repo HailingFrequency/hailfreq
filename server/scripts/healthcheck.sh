@@ -27,31 +27,68 @@ fi
 pass() { echo "  ✓ $1"; }
 fail() { echo "  ✗ $1"; exit 1; }
 
+# Fetch all container records once; supports both docker (newline-delimited JSON objects)
+# and podman (JSON array). Filter per service by the compose service label.
+PS_JSON=$($COMPOSE ps --format json 2>/dev/null || echo "")
+
 echo "Container health:"
 for svc in postgres synapse caddy livekit coturn; do
-  status=$($COMPOSE ps --format json "$svc" 2>/dev/null \
-    | python3 -c '
+  status=$(python3 -c '
 import sys, json
-raw = sys.stdin.read().strip()
-if not raw:
-    print("missing"); sys.exit()
+
+raw = """'"$PS_JSON"'"""
+svc = sys.argv[1]
+
+if not raw.strip():
+    print("missing")
+    sys.exit()
+
+# Normalise to a list of objects
 try:
     data = json.loads(raw)
-    # podman compose returns a JSON array; docker compose returns newline-delimited objects
-    if isinstance(data, list):
-        obj = data[-1] if data else {}
-    else:
-        obj = data
+    if isinstance(data, dict):
+        data = [data]
+    elif not isinstance(data, list):
+        data = []
 except json.JSONDecodeError:
-    # Fallback: treat as newline-delimited JSON objects
-    lines = [l for l in raw.splitlines() if l.strip()]
-    try:
-        obj = json.loads(lines[-1])
-    except Exception:
-        print("missing"); sys.exit()
-print(obj.get("Health") or obj.get("health") or "none")
-' \
-    2>/dev/null || echo "missing")
+    # newline-delimited JSON objects (docker compose)
+    data = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if line:
+            try:
+                data.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+
+# Find the container for this service
+obj = None
+for item in data:
+    labels = item.get("Labels") or {}
+    svc_label = labels.get("com.docker.compose.service") or labels.get("io.podman.compose.service") or ""
+    if svc_label == svc:
+        obj = item
+        break
+
+if obj is None:
+    print("missing")
+    sys.exit()
+
+# Prefer explicit Health field; fall back to parsing Status string
+health = obj.get("Health") or obj.get("health") or ""
+if not health:
+    status_str = obj.get("Status") or obj.get("status") or ""
+    if "(healthy)" in status_str:
+        health = "healthy"
+    elif "(unhealthy)" in status_str:
+        health = "unhealthy"
+    elif "(starting)" in status_str:
+        health = "starting"
+    else:
+        health = "none"
+
+print(health)
+' "$svc" 2>/dev/null || echo "missing")
   case "$status" in
     healthy|none) pass "$svc ($status)" ;;
     *) fail "$svc ($status)" ;;
