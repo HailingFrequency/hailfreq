@@ -78,7 +78,7 @@ export function NetRow({
   return (
     <div className={`flex items-center gap-3 rounded border-l-2 border p-3 ${
       transmitting
-        ? "border-brand-400 bg-brand-500/10"
+        ? "border-rose-500 bg-rose-500/10"
         : isShipNet && monitored
           ? "border-cyan-400/40 bg-slate-800/50"
           : isShipNet
@@ -97,6 +97,12 @@ export function NetRow({
           <span className="text-xs text-slate-500">P{net.properties.priority}</span>
           {activeSpeakers > 0 && (
             <span className="text-xs text-ok">{activeSpeakers} talking</span>
+          )}
+          {transmitting && (
+            <span className="ml-2 inline-flex items-center gap-1 rounded bg-rose-700 px-2 py-0.5 text-xs font-semibold uppercase text-white">
+              <span className="h-2 w-2 rounded-full bg-rose-200 animate-pulse" />
+              Live
+            </span>
           )}
         </div>
         <div className="mt-1 text-xs text-slate-500">{net.memberCount} members</div>
