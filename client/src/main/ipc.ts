@@ -22,11 +22,17 @@ export function registerIpcHandlers(): void {
     settings.set("ui", ui);
     return settings.store;
   });
-  ipcMain.handle("settings:setScInstallPath", (_event, args: { path: string | undefined }): void => {
-    if (args.path === undefined) {
+  ipcMain.handle("settings:setScInstallPath", (_event, args: unknown): void => {
+    if (args === null || typeof args !== "object" || !("path" in args)) {
+      throw new Error("settings:setScInstallPath: args must be { path: string | undefined }");
+    }
+    const { path: p } = args as { path: unknown };
+    if (p === undefined || p === null) {
       settings.delete("scInstallPath" as keyof Settings);
+    } else if (typeof p === "string") {
+      settings.set("scInstallPath", p);
     } else {
-      settings.set("scInstallPath", args.path);
+      throw new Error("settings:setScInstallPath: path must be a string or undefined");
     }
   });
 
@@ -80,8 +86,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("sc:findInstall", () => findScInstallCandidates());
   ipcMain.handle("sc:validatePath", (_event, args: { path: string }) => validateGameLogPath(args.path));
   ipcMain.handle("sc:pickGameLog", async (): Promise<string | null> => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
-    const result = await dialog.showOpenDialog(win!, {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const result = await dialog.showOpenDialog(win ?? undefined, {
       title: "Select Star Citizen Game.log",
       filters: [{ name: "Game.log", extensions: ["log"] }],
       properties: ["openFile"],
@@ -89,8 +95,7 @@ export function registerIpcHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     const chosen = result.filePaths[0];
     // Validate that the chosen file is actually named Game.log
-    const pathModule = await import("node:path");
-    if (pathModule.basename(chosen) !== "Game.log") return null;
+    if (path.basename(chosen) !== "Game.log") return null;
     return chosen;
   });
   ipcMain.handle("sc:startWatch", async (_event, args: { gameLogPath: string }) => {

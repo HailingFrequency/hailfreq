@@ -141,6 +141,7 @@ export function ScIntegrationSettings({
 
   async function handleSave() {
     setSaving(true);
+    setPathError("");
     try {
       await onSave({
         scIntegration: {
@@ -151,6 +152,8 @@ export function ScIntegrationSettings({
         scInstallPath: pathInput.trim() || undefined,
       });
       onClose();
+    } catch (err) {
+      setPathError(err instanceof Error ? `Save failed: ${err.message}` : "Save failed");
     } finally {
       setSaving(false);
     }
