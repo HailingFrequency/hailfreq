@@ -628,6 +628,10 @@ export function AppState() {
    * (servers added/removed, sign-in/out, monitored nets change). The engine will
    * attempt to start any enabled bridges whose rooms are now available.
    */
+  // signedInWithEngine is derived from state.servers, which gets a new Map
+  // reference whenever NetListPanel patches a server (e.g., on monitor/unmonitor
+  // toggle). That propagates here and re-fires refresh. Fragile because future
+  // servers:update patches that don't touch state.servers would skip this path.
   useEffect(() => {
     void bridgeEngineRef.current?.refreshRoomAvailability();
     // signedInWithEngine changes whenever servers/handles/voiceEngines change;

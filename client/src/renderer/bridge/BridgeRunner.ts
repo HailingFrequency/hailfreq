@@ -46,6 +46,10 @@ export class BridgeRunner {
     return this.status;
   }
 
+  getErrorMessage(): string | null {
+    return this.errorMessage;
+  }
+
   async start(): Promise<void> {
     if (this.status !== "stopped") return;
     this.setStatus("starting");

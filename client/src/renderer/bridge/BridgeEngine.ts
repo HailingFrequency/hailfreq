@@ -84,7 +84,7 @@ export class BridgeEngine {
         bridgeId: ab.config.id,
         direction: "forward",
         status: ab.forward.getStatus(),
-        errorMessage: null,
+        errorMessage: ab.forward.getErrorMessage(),
         changedMs: Date.now(),
       });
       if (ab.reverse) {
@@ -92,7 +92,7 @@ export class BridgeEngine {
           bridgeId: ab.config.id,
           direction: "reverse",
           status: ab.reverse.getStatus(),
-          errorMessage: null,
+          errorMessage: ab.reverse.getErrorMessage(),
           changedMs: Date.now(),
         });
       }
