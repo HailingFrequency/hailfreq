@@ -357,36 +357,58 @@ export function NetListPanel({ client, voiceEngine: externalEngine, serverEntry,
     );
   }
 
+  // Group: ship-nets first (alphabetical), then regular nets (priority order, already sorted)
+  const shipNets = nets
+    .filter((n) => n.isShipNet)
+    .sort((a, b) => a.properties.name.localeCompare(b.properties.name));
+  const regularNets = nets.filter((n) => !n.isShipNet);
+
+  function renderNetRow(net: (typeof nets)[number]) {
+    const ui = uiState.get(net.matrixRoomId) ?? defaultUi();
+    return (
+      <NetRow
+        key={net.matrixRoomId}
+        net={net}
+        monitored={ui.monitored}
+        volume={ui.volume}
+        activeSpeakers={ui.activeSpeakers}
+        transmitting={transmitting === net.matrixRoomId}
+        isShipNet={net.isShipNet}
+        pttMode={ui.pttMode}
+        keybind={ui.keybind}
+        keybindError={ui.keybindError}
+        voiceThresholdDb={ui.voiceThresholdDb}
+        outboundChirp={ui.outboundChirp}
+        inboundChirp={ui.inboundChirp}
+        availableChirps={availableChirps}
+        onToggleMonitor={() => void handleToggleMonitor(net)}
+        onVolumeChange={(v) => handleVolume(net.matrixRoomId, v)}
+        onPttModeChange={(mode) => void handlePttModeChange(net.matrixRoomId, mode)}
+        onKeybindChange={(a) => void handleKeybindChange(net.matrixRoomId, a)}
+        onKeybindClear={() => void handleKeybindClear(net.matrixRoomId)}
+        onVoiceThresholdChange={(db) => void handleVoiceThresholdChange(net.matrixRoomId, db)}
+        onOutboundChirpChange={(id) => handleChirpChange(net.matrixRoomId, "outbound", id)}
+        onInboundChirpChange={(id) => handleChirpChange(net.matrixRoomId, "inbound", id)}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2 p-4">
-      {nets.map((net) => {
-        const ui = uiState.get(net.matrixRoomId) ?? defaultUi();
-        return (
-          <NetRow
-            key={net.matrixRoomId}
-            net={net}
-            monitored={ui.monitored}
-            volume={ui.volume}
-            activeSpeakers={ui.activeSpeakers}
-            transmitting={transmitting === net.matrixRoomId}
-            pttMode={ui.pttMode}
-            keybind={ui.keybind}
-            keybindError={ui.keybindError}
-            voiceThresholdDb={ui.voiceThresholdDb}
-            outboundChirp={ui.outboundChirp}
-            inboundChirp={ui.inboundChirp}
-            availableChirps={availableChirps}
-            onToggleMonitor={() => void handleToggleMonitor(net)}
-            onVolumeChange={(v) => handleVolume(net.matrixRoomId, v)}
-            onPttModeChange={(mode) => void handlePttModeChange(net.matrixRoomId, mode)}
-            onKeybindChange={(a) => void handleKeybindChange(net.matrixRoomId, a)}
-            onKeybindClear={() => void handleKeybindClear(net.matrixRoomId)}
-            onVoiceThresholdChange={(db) => void handleVoiceThresholdChange(net.matrixRoomId, db)}
-            onOutboundChirpChange={(id) => handleChirpChange(net.matrixRoomId, "outbound", id)}
-            onInboundChirpChange={(id) => handleChirpChange(net.matrixRoomId, "inbound", id)}
-          />
-        );
-      })}
+      {shipNets.length > 0 && (
+        <>
+          <div className="px-3 pb-1 text-xs uppercase tracking-wider text-slate-500">
+            Ships
+          </div>
+          {shipNets.map(renderNetRow)}
+          {regularNets.length > 0 && (
+            <div className="px-3 pb-1 pt-2 text-xs uppercase tracking-wider text-slate-500">
+              Nets
+            </div>
+          )}
+        </>
+      )}
+      {regularNets.map(renderNetRow)}
     </div>
   );
 }

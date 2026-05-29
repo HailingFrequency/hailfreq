@@ -9,6 +9,7 @@ interface NetRowProps {
   volume: number;
   activeSpeakers: number;
   transmitting: boolean;
+  isShipNet: boolean;
   pttMode: PttMode;
   keybind: string | null;
   keybindError?: string | null;
@@ -32,6 +33,7 @@ export function NetRow({
   volume,
   activeSpeakers,
   transmitting,
+  isShipNet,
   pttMode,
   keybind,
   keybindError,
@@ -49,12 +51,16 @@ export function NetRow({
   onInboundChirpChange,
 }: NetRowProps) {
   return (
-    <div className={`flex items-center gap-3 rounded border p-3 ${
+    <div className={`flex items-center gap-3 rounded border-l-2 border p-3 ${
       transmitting
         ? "border-brand-400 bg-brand-500/10"
-        : monitored
-          ? "border-slate-700 bg-slate-800/50"
-          : "border-slate-800 bg-slate-900"
+        : isShipNet && monitored
+          ? "border-cyan-400/40 bg-slate-800/50"
+          : isShipNet
+            ? "border-cyan-400/40 bg-slate-900"
+            : monitored
+              ? "border-slate-700 bg-slate-800/50"
+              : "border-slate-800 bg-slate-900"
     }`}>
       <div
         className="h-2 w-2 shrink-0 rounded-full"

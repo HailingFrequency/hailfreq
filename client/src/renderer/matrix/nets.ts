@@ -12,11 +12,18 @@ export interface NetSummary {
   properties: NetProperties;
   memberCount: number;
   myPowerLevel: number;
+  /** True when the room carries ship-net metadata (org.hailfreq.ship.type). */
+  isShipNet: boolean;
 }
 
 const NET_PRIORITY_EVENT = "org.hailfreq.net.priority";
 const NET_NAME_EVENT = "org.hailfreq.net.name";
 const NET_COLOR_EVENT = "org.hailfreq.net.color";
+
+// Ship-net state event types (also used in ship-net section below)
+const SHIP_TYPE_EVENT = "org.hailfreq.ship.type";
+const SHIP_OWNER_RSI_EVENT = "org.hailfreq.ship.owner-rsi";
+const SHIP_OWNER_MATRIX_EVENT = "org.hailfreq.ship.owner-matrix-id";
 
 /**
  * Derive the LiveKit room name from a Matrix room ID.
@@ -51,6 +58,7 @@ export function listNets(client: MatrixClient): NetSummary[] {
       properties: props,
       memberCount: room.getJoinedMemberCount(),
       myPowerLevel: room.getMember(client.getSafeUserId())?.powerLevel ?? 0,
+      isShipNet: !!room.currentState.getStateEvents(SHIP_TYPE_EVENT, ""),
     });
   }
   // Sort by priority descending (highest priority first)
@@ -143,10 +151,6 @@ export async function deleteNet(client: MatrixClient, matrixRoomId: string): Pro
 // ---------------------------------------------------------------------------
 // Ship-net extensions
 // ---------------------------------------------------------------------------
-
-const SHIP_TYPE_EVENT = "org.hailfreq.ship.type";
-const SHIP_OWNER_RSI_EVENT = "org.hailfreq.ship.owner-rsi";
-const SHIP_OWNER_MATRIX_EVENT = "org.hailfreq.ship.owner-matrix-id";
 
 export interface ShipNetMetadata {
   shipType: string;
