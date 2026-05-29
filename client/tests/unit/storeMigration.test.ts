@@ -49,12 +49,34 @@ describe("migrateLegacyShape", () => {
         userId: "@u:x",
         lastLoginMethod: "citizenid",
         lastSyncedMs: 0,
+        scIntegration: { enabled: false, autoInviteAllowlist: [], autoCloseOnDestruction: true },
       }],
       activeServerId: "abc",
       ui: { theme: "dark" },
     };
     const migrated = migrateLegacyShape(current);
     expect(migrated).toEqual(current);
+  });
+
+  it("defaults scIntegration on legacy v2 entries that lack it", () => {
+    const legacyV2: Settings = {
+      servers: [{
+        id: "abc",
+        label: "Test",
+        serverUrl: "https://x.com",
+        userId: "@u:x",
+        lastLoginMethod: "citizenid",
+        lastSyncedMs: 0,
+      }],
+      activeServerId: "abc",
+      ui: { theme: "dark" },
+    };
+    const migrated = migrateLegacyShape(legacyV2);
+    expect(migrated.servers[0].scIntegration).toEqual({
+      enabled: false,
+      autoInviteAllowlist: [],
+      autoCloseOnDestruction: true,
+    });
   });
 
   it("handles a totally fresh store (defaults)", () => {
