@@ -3,6 +3,7 @@ import { KeybindCapture } from "./KeybindCapture";
 import type { PttMode } from "../voice/PttController";
 import type { ChirpSummary } from "@shared/ipc";
 import type { ActiveShareSummary, LocalShareState } from "../share/types";
+import type { BridgeRunnerStatus } from "../bridge/types";
 
 export interface NetRowProps {
   net: NetSummary;
@@ -24,6 +25,8 @@ export interface NetRowProps {
   localShare: LocalShareState | null;
   /** True if any local share is active anywhere — used to disable "Share" buttons on other rows. */
   anyLocalShareActive: boolean;
+  /** Set when this net is source or target of an active (idle/relaying) bridge. */
+  bridgeIndicator: { bridgeName: string; status: BridgeRunnerStatus } | null;
   onToggleMonitor: () => void;
   onVolumeChange: (volume: number) => void;
   onPttModeChange: (mode: PttMode) => void;
@@ -54,6 +57,7 @@ export function NetRow({
   activeShare,
   localShare,
   anyLocalShareActive,
+  bridgeIndicator,
   onToggleMonitor,
   onVolumeChange,
   onPttModeChange,
@@ -175,6 +179,15 @@ export function NetRow({
         >
           📺
         </button>
+      )}
+
+      {bridgeIndicator && (
+        <span
+          className="text-xs text-cyan-300"
+          title={`${bridgeIndicator.bridgeName} (${bridgeIndicator.status})`}
+        >
+          🌉
+        </span>
       )}
 
       {availableChirps.length > 0 && (

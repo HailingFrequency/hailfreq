@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
-import type { FocusedAppPttSettings, NetPreferences, ServerEntry } from "@shared/types";
+import type { BridgeConfig, FocusedAppPttSettings, NetPreferences, ServerEntry } from "@shared/types";
 import type { ChirpSummary } from "@shared/ipc";
 import { listNets, subscribeToNetsChanges, type NetSummary } from "../matrix/nets";
 import { NetRow } from "./NetRow";
@@ -11,6 +11,7 @@ import type { ActiveShareSummary, LocalShareState } from "../share/types";
 import { SourcePickerModal } from "../share/SourcePickerModal";
 import { ShareViewerPane } from "../share/ShareViewerPane";
 import { acquireDisplayStream } from "../share/acquireDisplayStream";
+import type { BridgeRunnerStatus } from "../bridge/types";
 
 
 interface NetListPanelProps {
@@ -48,6 +49,16 @@ interface NetListPanelProps {
    * Key-release events are never gated.
    */
   focusedAppPtt?: FocusedAppPttSettings;
+  /**
+   * Global bridge configs. Used to compute per-row bridge indicators.
+   * When absent (legacy / test), no bridge indicators are shown.
+   */
+  bridges?: BridgeConfig[];
+  /**
+   * Live runner statuses from BridgeEngine, keyed by bridge id.
+   * Used together with bridges to compute per-row bridge indicators.
+   */
+  bridgeRunnerStatuses?: Map<string, { forward: BridgeRunnerStatus; reverse: BridgeRunnerStatus | null }>;
 }
 
 const DEFAULT_OUTBOUND_CHIRP = "builtin:click";
@@ -121,7 +132,7 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
   return prefs;
 }
 
-export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine, activeShares = [], localShare = null, serverEntry, onTransmittingChange, focusedAppPtt }: NetListPanelProps) {
+export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine, activeShares = [], localShare = null, serverEntry, onTransmittingChange, focusedAppPtt, bridges = [], bridgeRunnerStatuses = new Map() }: NetListPanelProps) {
   const [nets, setNets] = useState<NetSummary[]>([]);
   const [uiState, setUiState] = useState<Map<string, PerNetUiState>>(new Map());
   // Use the shared engine from AppState when available; fall back to a local
@@ -462,6 +473,20 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
     const rowLocalShare =
       localShare?.matrixRoomId === net.matrixRoomId ? localShare : null;
     const anyLocalShareActive = localShare !== null;
+    const serverId = serverEntry.id;
+    const bridgeIndicator = (() => {
+      for (const bridge of bridges) {
+        if (!bridge.enabled) continue;
+        const isSrc = bridge.source.serverId === serverId && bridge.source.matrixRoomId === net.matrixRoomId;
+        const isTgt = bridge.target.serverId === serverId && bridge.target.matrixRoomId === net.matrixRoomId;
+        if (!isSrc && !isTgt) continue;
+        const statuses = bridgeRunnerStatuses.get(bridge.id);
+        const forwardStatus = statuses?.forward ?? "stopped";
+        if (forwardStatus === "stopped" || forwardStatus === "error") continue;
+        return { bridgeName: bridge.name, status: forwardStatus };
+      }
+      return null;
+    })();
     return (
       <NetRow
         key={net.matrixRoomId}
@@ -481,6 +506,7 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
         activeShare={rowActiveShare}
         localShare={rowLocalShare}
         anyLocalShareActive={anyLocalShareActive}
+        bridgeIndicator={bridgeIndicator}
         onToggleMonitor={() => void handleToggleMonitor(net)}
         onVolumeChange={(v) => handleVolume(net.matrixRoomId, v)}
         onPttModeChange={(mode) => void handlePttModeChange(net.matrixRoomId, mode)}

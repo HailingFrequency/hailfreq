@@ -218,6 +218,8 @@ export function Home({
           serverEntry={serverEntry}
           onTransmittingChange={onTransmittingChange}
           focusedAppPtt={focusedAppPtt}
+          bridges={bridges}
+          bridgeRunnerStatuses={bridgeRunnerStatuses}
         />
       </div>
 
