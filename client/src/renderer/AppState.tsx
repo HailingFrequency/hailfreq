@@ -543,14 +543,13 @@ export function AppState() {
         serverId,
         patch: { notificationsEnabled: enabled },
       });
-      setState((s) =>
-        patchServer(s, serverId, {
-          entry: {
-            ...s.servers.get(serverId)!.entry,
-            notificationsEnabled: enabled,
-          },
-        }),
-      );
+      setState((s) => {
+        const existing = s.servers.get(serverId);
+        if (!existing) return s;
+        return patchServer(s, serverId, {
+          entry: { ...existing.entry, notificationsEnabled: enabled },
+        });
+      });
     },
     [],
   );
