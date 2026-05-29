@@ -100,7 +100,26 @@ export function Home({
   const [showAdmin, setShowAdmin] = useState(false);
 
   useEffect(() => {
-    void detectAdminCapabilities(client).then(setAdminCaps);
+    let cancelled = false;
+    const recompute = () => {
+      if (cancelled) return;
+      void detectAdminCapabilities(client).then((caps) => {
+        if (!cancelled) setAdminCaps(caps);
+      });
+    };
+    recompute();
+
+    // Re-run when membership / power level changes, or rooms are created
+    const events = ["Room", "Room.myMembership", "RoomState.events"];
+    for (const evt of events) {
+      client.on(evt as never, recompute as never);
+    }
+    return () => {
+      cancelled = true;
+      for (const evt of events) {
+        client.off(evt as never, recompute as never);
+      }
+    };
   }, [client]);
 
   // Auto-dismiss toasts whose expiresAt has passed.
