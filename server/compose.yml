@@ -54,6 +54,7 @@ services:
       - "443:443"
     environment:
       HAILFREQ_DOMAIN: ${HAILFREQ_DOMAIN:?HAILFREQ_DOMAIN not set}
+      HAILFREQ_SERVER_HOSTNAME: ${HAILFREQ_SERVER_HOSTNAME:?HAILFREQ_SERVER_HOSTNAME not set}
       HAILFREQ_ADMIN_EMAIL: ${HAILFREQ_ADMIN_EMAIL:?HAILFREQ_ADMIN_EMAIL not set}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -106,7 +107,7 @@ services:
     environment:
       PORT: "8088"
       SYNAPSE_URL: "http://synapse:8008"
-      LIVEKIT_URL: "wss://${HAILFREQ_DOMAIN}/livekit"
+      LIVEKIT_URL: "wss://${HAILFREQ_SERVER_HOSTNAME}/livekit"
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
     healthcheck:

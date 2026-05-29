@@ -2,7 +2,7 @@
 # Generated from homeserver.yaml.template — do not edit directly; edit the template.
 
 server_name: "${HAILFREQ_DOMAIN}"
-public_baseurl: "https://${HAILFREQ_DOMAIN}/"
+public_baseurl: "https://${HAILFREQ_SERVER_HOSTNAME}/"
 pid_file: /data/homeserver.pid
 web_client_location: ""
 serve_server_wellknown: true
@@ -97,9 +97,9 @@ rc_login:
 
 # TURN config — advertise coturn to clients via /_matrix/client/v3/voip/turnServer
 turn_uris:
-  - "turn:${HAILFREQ_DOMAIN}:3478?transport=udp"
-  - "turn:${HAILFREQ_DOMAIN}:3478?transport=tcp"
-  - "turns:${HAILFREQ_DOMAIN}:5349?transport=tcp"
+  - "turn:${HAILFREQ_SERVER_HOSTNAME}:3478?transport=udp"
+  - "turn:${HAILFREQ_SERVER_HOSTNAME}:3478?transport=tcp"
+  - "turns:${HAILFREQ_SERVER_HOSTNAME}:5349?transport=tcp"
 turn_shared_secret: "${TURN_SHARED_SECRET}"
 turn_user_lifetime: 86400000
 turn_allow_guests: false

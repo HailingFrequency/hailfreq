@@ -2,7 +2,32 @@
   email $HAILFREQ_ADMIN_EMAIL
 }
 
+# === Identity domain — only serves Matrix .well-known delegation ===
+# Clients enter this hostname; they discover the actual server via the
+# .well-known/matrix/client response.
+
 $HAILFREQ_DOMAIN {
+  handle /.well-known/matrix/client {
+    header Content-Type application/json
+    header Access-Control-Allow-Origin *
+    respond `{"m.homeserver":{"base_url":"https://$HAILFREQ_SERVER_HOSTNAME"}}`
+  }
+  handle /.well-known/matrix/server {
+    header Content-Type application/json
+    respond `{"m.server":"$HAILFREQ_SERVER_HOSTNAME:443"}`
+  }
+
+  # Landing fallback for anyone hitting the apex in a browser
+  handle {
+    respond "Hailfreq — use a Matrix client and enter $HAILFREQ_DOMAIN as the server URL." 200
+  }
+
+  encode gzip
+}
+
+# === Server hostname — Synapse + LiveKit + livekit-auth ===
+
+$HAILFREQ_SERVER_HOSTNAME {
   # Matrix client/federation API + Synapse admin
   handle /_matrix/* {
     reverse_proxy synapse:8008
@@ -23,20 +48,9 @@ $HAILFREQ_DOMAIN {
     reverse_proxy host.docker.internal:7880
   }
 
-  # .well-known files for Matrix client + server auto-discovery
-  handle /.well-known/matrix/client {
-    header Content-Type application/json
-    header Access-Control-Allow-Origin *
-    respond `{"m.homeserver":{"base_url":"https://$HAILFREQ_DOMAIN"}}`
-  }
-  handle /.well-known/matrix/server {
-    header Content-Type application/json
-    respond `{"m.server":"$HAILFREQ_DOMAIN:443"}`
-  }
-
-  # Fallback — return a friendly landing
+  # Friendly fallback
   handle {
-    respond "Hailfreq server. Use a Matrix client to connect." 200
+    respond "Hailfreq server." 200
   }
 
   encode gzip

@@ -7,8 +7,8 @@ external-ip=${HAILFREQ_PUBLIC_IP}
 min-port=49152
 max-port=49999
 
-realm=${HAILFREQ_DOMAIN}
-server-name=${HAILFREQ_DOMAIN}
+realm=${HAILFREQ_SERVER_HOSTNAME}
+server-name=${HAILFREQ_SERVER_HOSTNAME}
 
 # Long-term credential with shared secret (REST API style — Synapse/LiveKit generate temp creds)
 use-auth-secret
