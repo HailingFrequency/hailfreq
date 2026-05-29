@@ -31,6 +31,12 @@ export interface ScInstallCandidate {
   source: ScInstallSource;
 }
 
+export interface FocusedAppInfo {
+  processName: string | null;
+  title: string | null;
+  isWayland: boolean;
+}
+
 // Source of truth for all IPC channels. Add new channels here.
 export interface IpcChannels {
   "app:version": { args: []; result: string };
@@ -71,6 +77,7 @@ export interface IpcChannels {
   "sc:pickGameLog": { args: []; result: string | null };
   "sc:startWatch": { args: [{ gameLogPath: string }]; result: void };
   "sc:stopWatch": { args: []; result: void };
+  "focus:get": { args: []; result: FocusedAppInfo };
 }
 
 export type IpcChannelName = keyof IpcChannels;

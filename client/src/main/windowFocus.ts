@@ -11,12 +11,8 @@
  */
 
 import activeWin from "active-win";
-
-export interface FocusedAppInfo {
-  processName: string | null;
-  title: string | null;
-  isWayland: boolean;
-}
+import type { FocusedAppInfo } from "../shared/ipc";
+export type { FocusedAppInfo };
 
 let cache: FocusedAppInfo = {
   processName: null,

@@ -8,6 +8,8 @@ import { registerHold, unregisterHold } from "./nativeKeyListener";
 import { listChirps, readChirp, openChirpFolder } from "./chirps";
 import { findScInstallCandidates, validateGameLogPath } from "./scInstallPath";
 import { startWatch, stopWatch } from "./scLogTail";
+import { getFocusedApp } from "./windowFocus";
+import type { FocusedAppInfo } from "../shared/ipc";
 import { showNotification } from "./notifications";
 import type { NotifyOptions } from "./notifications";
 import type { Settings, ServerEntry } from "../shared/types";
@@ -113,5 +115,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("app:windowFocused", (): boolean => {
     const win = BrowserWindow.getFocusedWindow();
     return win?.isFocused() ?? false;
+  });
+
+  ipcMain.handle("focus:get", (): FocusedAppInfo => {
+    return getFocusedApp();
   });
 }
