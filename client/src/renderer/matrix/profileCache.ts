@@ -97,18 +97,25 @@ export async function lookupMatrixIdByRsiHandle(
 ): Promise<string | null> {
   const target = rsiHandle.toLowerCase();
 
-  // Iterate joined members across all rooms (de-duplicate by user ID)
+  // Collect de-duplicated user IDs across all joined rooms
   const seen = new Set<string>();
+  const userIds: string[] = [];
   for (const room of client.getRooms()) {
     for (const member of room.getJoinedMembers()) {
       if (seen.has(member.userId)) continue;
       seen.add(member.userId);
-      const profile = await fetchCitizenIdProfile(client, member.userId);
-      if (!profile?.rsiHandle) continue;
-      if (profile.rsiHandle.toLowerCase() === target) {
-        return member.userId;
-      }
+      userIds.push(member.userId);
     }
   }
-  return null;
+
+  // Fetch all profiles in parallel; fetchCitizenIdProfile has an in-memory cache
+  // so repeat calls are cheap after the first round-trip.
+  const results = await Promise.all(
+    userIds.map(async (userId) => {
+      const profile = await fetchCitizenIdProfile(client, userId);
+      if (profile?.rsiHandle?.toLowerCase() === target) return userId;
+      return null;
+    }),
+  );
+  return results.find((r) => r !== null) ?? null;
 }

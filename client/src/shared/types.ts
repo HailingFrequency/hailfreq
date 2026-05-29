@@ -90,6 +90,7 @@ declare global {
       ) => () => void;
       onNotifyClicked: (cb: (payload: { serverId?: string }) => void) => () => void;
       onScLogLine: (cb: (payload: { line: string }) => void) => () => void;
+      onScTailerReplaced: (cb: (payload: { oldPath: string; newPath: string }) => void) => () => void;
     };
   }
 }

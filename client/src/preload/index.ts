@@ -35,6 +35,11 @@ const api = {
     ipcRenderer.on("sc:logLine", handler);
     return () => ipcRenderer.off("sc:logLine", handler);
   },
+  onScTailerReplaced: (cb: (payload: { oldPath: string; newPath: string }) => void) => {
+    const handler = (_e: unknown, payload: { oldPath: string; newPath: string }) => cb(payload);
+    ipcRenderer.on("sc:tailerReplaced", handler);
+    return () => ipcRenderer.off("sc:tailerReplaced", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("hailfreq", api);

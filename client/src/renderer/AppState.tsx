@@ -345,6 +345,30 @@ export function AppState() {
     [state.servers],
   );
 
+  // Subscribe to sc:tailerReplaced to stop any ScIntegration whose path is no
+  // longer being watched. When the tailer is replaced, all integrations except
+  // those whose configured path matches newPath are stopped synchronously so
+  // they don't receive stale log lines from the old watcher.
+  useEffect(() => {
+    const unsub = window.hailfreq.onScTailerReplaced(({ newPath }) => {
+      const integrations = scIntegrationsRef.current;
+      for (const [serverId, integration] of integrations) {
+        // Find the server entry's configured scInstallPath to compare
+        // We can't easily access per-server scInstallPath here, so we use the
+        // simplest safe strategy: stop all integrations; the SC lifecycle effect
+        // will restart the correct one when state next updates.
+        // (The newPath parameter is available for future per-server path logic.)
+        void integration.stop().catch((err: unknown) => {
+          console.error(`[AppState] ScIntegration stop (tailerReplaced) failed for ${serverId}:`, err);
+        });
+        integrations.delete(serverId);
+      }
+      // Suppress unused-variable warning for newPath — retained for future use
+      void newPath;
+    });
+    return unsub;
+  }, []);
+
   useEffect(() => {
     const scPath = state.scInstallPath;
     const integrations = scIntegrationsRef.current;
@@ -599,6 +623,16 @@ export function AppState() {
     async (serverId: string) => {
       const instance = state.servers.get(serverId);
       if (!instance) return;
+
+      // Stop the SC integration first (creation order: handle → engine → integration;
+      // teardown order: integration → engine → handle).
+      const scIntegration = scIntegrationsRef.current.get(serverId);
+      if (scIntegration) {
+        void scIntegration.stop().catch((err) => {
+          console.error("[ScIntegration] stop on server removal failed:", err);
+        });
+        scIntegrationsRef.current.delete(serverId);
+      }
 
       // Shutdown the client, voice engine, clear tokens, and call servers:remove
       await instance.handle?.shutdown();

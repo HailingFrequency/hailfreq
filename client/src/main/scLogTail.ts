@@ -1,3 +1,15 @@
+/**
+ * Single-process Game.log tailer. Only one tailer is active at a time per
+ * Electron main process. If `startWatch` is called with a path different
+ * from the active one, the previous tailer is stopped and a
+ * `sc:tailerReplaced` push event is broadcast so renderer integrations
+ * can react (e.g. stop their ScIntegration cleanly).
+ *
+ * Hailfreq is designed for one SC install per machine, so this is acceptable.
+ * Multi-server users with different scInstallPath values will see only the
+ * most-recently-started tailer's events.
+ */
+
 import { BrowserWindow } from "electron";
 import fs from "node:fs";
 import { promises as fsp } from "node:fs";
@@ -68,6 +80,10 @@ async function readNewBytes(state: WatchState): Promise<void> {
 
 export async function startWatch(gameLogPath: string): Promise<void> {
   if (active && active.path === gameLogPath) return;
+  if (active) {
+    // Notify renderer that the previous tailer is being replaced
+    broadcast("sc:tailerReplaced", { oldPath: active.path, newPath: gameLogPath });
+  }
   await stopWatch();
 
   // Initial read: skip existing content; we only care about appends from "now" forward
