@@ -96,10 +96,19 @@ envsubst < livekit/livekit.yaml.template > livekit/livekit.yaml
 echo "→ Rendering coturn/turnserver.conf"
 envsubst < coturn/turnserver.conf.template > coturn/turnserver.conf
 
-# Build the bundled livekit-auth image so podman/docker compose can use it
-echo "→ Building livekit-auth image"
-docker compose --file compose.yml build livekit-auth 2>&1 | tail -3 || \
-  podman compose --file compose.yml build livekit-auth 2>&1 | tail -3
+# Build livekit-auth from source only when LIVEKIT_AUTH_IMAGE is set to a local tag.
+# By default the GHCR-published image is used; compose will pull it on `up -d`.
+# To build locally instead:
+#   1) uncomment the build: block in compose.yml under the livekit-auth service
+#   2) export LIVEKIT_AUTH_IMAGE=hailfreq/livekit-auth:local
+#   3) re-run this script — the conditional below will detect the local tag and build.
+if [[ "${LIVEKIT_AUTH_IMAGE:-}" == *":local" || "${LIVEKIT_AUTH_IMAGE:-}" == hailfreq/livekit-auth:* ]]; then
+  echo "→ Building livekit-auth from source (LIVEKIT_AUTH_IMAGE=${LIVEKIT_AUTH_IMAGE})"
+  docker compose --file compose.yml build livekit-auth 2>&1 | tail -3 || \
+    podman compose --file compose.yml build livekit-auth 2>&1 | tail -3
+else
+  echo "→ livekit-auth: using published image (ghcr.io/hailingfrequency/livekit-auth:latest)"
+fi
 
 # Rootless podman fix: synapse runs as UID 991 inside the container, which maps
 # to a high UID in the rootless namespace. The synapse_data volume is created by
