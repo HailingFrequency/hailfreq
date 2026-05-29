@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
 import type { BridgeConfig, FocusedAppPttSettings, NetPreferences, ServerEntry } from "@shared/types";
 import type { ChirpSummary } from "@shared/ipc";
-import { listNets, subscribeToNetsChanges, type NetSummary } from "../matrix/nets";
+import { listNets, subscribeToNetsChanges, updateNetProperties, type NetSummary } from "../matrix/nets";
 import { NetRow } from "./NetRow";
 import { VoiceEngine } from "../voice/VoiceEngine";
 import { PttController, type PttMode } from "../voice/PttController";
@@ -447,6 +447,14 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
     });
   }
 
+  async function handleSetSelfMonitor(matrixRoomId: string, enabled: boolean) {
+    // Persist the flag as a Matrix state event so it survives reconnects
+    await updateNetProperties(client, matrixRoomId, { selfMonitor: enabled });
+    // Also update the engine's in-memory flag so the next PTT picks it up
+    // without waiting for a Matrix sync event
+    engine.setSelfMonitor(matrixRoomId, enabled);
+  }
+
   if (nets.length === 0) {
     return (
       <div className="p-6 text-center text-sm text-slate-400">
@@ -519,6 +527,7 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
         onStartShare={(matrixRoomId) => setPickerForRoomId(matrixRoomId)}
         onStopShare={handleStopShare}
         onOpenViewer={(share) => setViewingShare(share)}
+        onSetSelfMonitor={(matrixRoomId, enabled) => void handleSetSelfMonitor(matrixRoomId, enabled)}
       />
     );
   }

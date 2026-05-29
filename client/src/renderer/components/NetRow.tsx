@@ -42,6 +42,7 @@ export interface NetRowProps {
   onStartShare: (matrixRoomId: string) => void;
   onStopShare: () => void;
   onOpenViewer: (share: ActiveShareSummary) => void;
+  onSetSelfMonitor: (matrixRoomId: string, enabled: boolean) => void;
 }
 
 export function NetRow({
@@ -74,6 +75,7 @@ export function NetRow({
   onStartShare,
   onStopShare,
   onOpenViewer,
+  onSetSelfMonitor,
 }: NetRowProps) {
   return (
     <div className={`flex items-center gap-3 rounded border-l-2 border p-3 ${
@@ -241,6 +243,17 @@ export function NetRow({
           >
             Custom chirps…
           </button>
+          <label
+            className="flex items-center gap-1 text-xs text-slate-400"
+            title="Hear yourself while transmitting (for solo testing)"
+          >
+            <input
+              type="checkbox"
+              checked={!!net.properties.selfMonitor}
+              onChange={(e) => onSetSelfMonitor(net.matrixRoomId, e.target.checked)}
+            />
+            Self-mon
+          </label>
         </div>
       )}
     </div>

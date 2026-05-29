@@ -76,6 +76,10 @@ export class VoiceEngine {
   private netChirps = new Map<string, NetChirps>();
   /** Master chirp volume (applied in addition to per-play local gain in chirpPlayer). */
   private chirpVolume = 0.7;
+  /** Per-net local mic monitor gain nodes. Active while PTT is live and selfMonitor is enabled. */
+  private localMonitorNodes = new Map<string, AudioNode>();
+  /** Set of Matrix room IDs for which selfMonitor is currently enabled. */
+  private selfMonitorNets = new Set<string>();
 
   constructor(client: MatrixClient) {
     this.client = client;
@@ -144,6 +148,23 @@ export class VoiceEngine {
   /** Adjust the master chirp output volume (0.0–1.0). */
   setChirpVolume(volume: number): void {
     this.chirpVolume = Math.max(0, Math.min(1, volume));
+  }
+
+  /**
+   * Enable or disable local mic monitoring for a net.
+   * When enabled, the user hears their own mic while PTT is active (bypasses
+   * the LiveKit round-trip — safe with headphones, may feedback with speakers).
+   */
+  setSelfMonitor(matrixRoomId: string, enabled: boolean): void {
+    if (enabled) {
+      this.selfMonitorNets.add(matrixRoomId);
+    } else {
+      this.selfMonitorNets.delete(matrixRoomId);
+      // If currently transmitting on this net, stop the monitor immediately
+      if (this.activePttNet === matrixRoomId) {
+        this.stopLocalMicMonitor(matrixRoomId);
+      }
+    }
   }
 
   /** Subscribe to a net's voice. Connects to LiveKit + sets up audio routing. */
@@ -252,21 +273,25 @@ export class VoiceEngine {
     const state = this.nets.get(matrixRoomId);
     if (!state) throw new Error(`Cannot PTT — not monitoring net ${matrixRoomId}`);
 
-    if (!this.micStream) {
-      this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: false,
-          channelCount: 1,
-          sampleRate: 48000,
-        },
-      });
-    }
-    const [micTrack] = this.micStream.getAudioTracks();
+    // getMicSource() lazily allocates micStream and micSourceNode together.
+    // This also pre-warms the mic so the first PTT is instant on subsequent calls.
+    await this.getMicSource();
+    const [micTrack] = this.micStream!.getAudioTracks();
     await state.connection.startMicPublishing(micTrack.clone());
     this.activePttNet = matrixRoomId;
     this.listeners.pttStateChanged?.(matrixRoomId);
+
+    // Start local mic monitor if selfMonitor is enabled for this net
+    const net = this.nets.get(matrixRoomId);
+    if (net) {
+      // selfMonitor flag is carried in the Matrix room properties — fetch from the
+      // cached NetSummary that NetListPanel pushed via setNetSelfMonitor, or check
+      // the engine's own record if available. Since VoiceEngine doesn't hold a
+      // reference to NetSummary, the flag is injected via setSelfMonitor().
+      if (this.selfMonitorNets.has(matrixRoomId)) {
+        this.startLocalMicMonitor(matrixRoomId);
+      }
+    }
 
     // Play outbound chirp locally (not transmitted — we publish only the mic track)
     const outboundId = this.netChirps.get(matrixRoomId)?.outbound ?? "builtin:click";
@@ -279,11 +304,40 @@ export class VoiceEngine {
     const net = this.activePttNet;
     const state = this.nets.get(net);
     if (state) await state.connection.stopMicPublishing();
+    // Stop local mic monitor regardless of selfMonitor flag (safe no-op if not running)
+    this.stopLocalMicMonitor(net);
     this.activePttNet = null;
     this.listeners.pttStateChanged?.(null);
 
     // Play end-of-transmission click (always the built-in click, regardless of outbound selection)
     void this.playNetChirp("builtin:click");
+  }
+
+  /**
+   * Pipe the user's mic to the local audio output for the duration of a PTT.
+   * This lets solo testers hear themselves and confirm the system is functional.
+   * Safe to call even when micSourceNode already feeds other nodes — Web Audio
+   * supports fan-out, so no existing connections are disturbed.
+   */
+  private startLocalMicMonitor(matrixRoomId: string): void {
+    if (this.localMonitorNodes.has(matrixRoomId)) return;
+    const micSource = this.micSourceNode;
+    if (!micSource) return;
+    const ctx = this.audioCtx;
+    if (!ctx) return;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.6;
+    micSource.connect(gain);
+    gain.connect(ctx.destination);
+    this.localMonitorNodes.set(matrixRoomId, gain);
+  }
+
+  private stopLocalMicMonitor(matrixRoomId: string): void {
+    const node = this.localMonitorNodes.get(matrixRoomId);
+    if (node) {
+      try { node.disconnect(); } catch { /* ignore if already disconnected */ }
+      this.localMonitorNodes.delete(matrixRoomId);
+    }
   }
 
   /** Load and play a chirp ID through the dedicated chirp gain node. Errors are swallowed — chirp failures must not interrupt voice. */
@@ -352,6 +406,13 @@ export class VoiceEngine {
     this.rotationHandle?.unsubscribe();
     this.rotationHandle = null;
     await this.stopPtt();
+    // Disconnect any remaining local monitor nodes (stopPtt covers active PTT net,
+    // but clean up any lingering nodes defensively)
+    for (const node of this.localMonitorNodes.values()) {
+      try { node.disconnect(); } catch { /* ignore */ }
+    }
+    this.localMonitorNodes.clear();
+    this.selfMonitorNets.clear();
     for (const id of Array.from(this.nets.keys())) {
       await this.unmonitorNet(id);
     }

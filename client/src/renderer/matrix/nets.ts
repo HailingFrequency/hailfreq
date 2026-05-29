@@ -4,6 +4,7 @@ export interface NetProperties {
   priority: number; // 0-100
   name: string;
   color: string; // CSS color or short identifier
+  selfMonitor?: boolean; // When true, mic is piped locally while transmitting (defaults to false)
 }
 
 export interface NetSummary {
@@ -19,6 +20,7 @@ export interface NetSummary {
 const NET_PRIORITY_EVENT = "org.hailfreq.net.priority";
 const NET_NAME_EVENT = "org.hailfreq.net.name";
 const NET_COLOR_EVENT = "org.hailfreq.net.color";
+const NET_SELF_MONITOR_EVENT = "org.hailfreq.net.self-monitor";
 
 // Ship-net state event types (also used in ship-net section below)
 const SHIP_TYPE_EVENT = "org.hailfreq.ship.type";
@@ -47,10 +49,12 @@ export function listNets(client: MatrixClient): NetSummary[] {
     if (!priorityEv) continue;
     const nameEv = room.currentState.getStateEvents(NET_NAME_EVENT, "");
     const colorEv = room.currentState.getStateEvents(NET_COLOR_EVENT, "");
+    const selfMonitorEv = room.currentState.getStateEvents(NET_SELF_MONITOR_EVENT, "");
     const props: NetProperties = {
       priority: Number(priorityEv.getContent().value ?? 0),
       name: String(nameEv?.getContent().value ?? room.name ?? "Net"),
       color: String(colorEv?.getContent().value ?? "#22d3ee"),
+      selfMonitor: Boolean(selfMonitorEv?.getContent().value ?? false),
     };
     nets.push({
       matrixRoomId: room.roomId,
@@ -75,31 +79,39 @@ export async function createNet(
   client: MatrixClient,
   props: NetProperties,
 ): Promise<string> {
+  const initialState: any[] = [
+    {
+      type: "m.room.encryption",
+      state_key: "",
+      content: { algorithm: "m.megolm.v1.aes-sha2" },
+    },
+    {
+      type: NET_PRIORITY_EVENT,
+      state_key: "",
+      content: { value: props.priority },
+    },
+    {
+      type: NET_NAME_EVENT,
+      state_key: "",
+      content: { value: props.name },
+    },
+    {
+      type: NET_COLOR_EVENT,
+      state_key: "",
+      content: { value: props.color },
+    },
+  ];
+  if (props.selfMonitor !== undefined) {
+    initialState.push({
+      type: NET_SELF_MONITOR_EVENT,
+      state_key: "",
+      content: { value: props.selfMonitor },
+    });
+  }
   const create = await client.createRoom({
     preset: "private_chat" as any,
     name: props.name,
-    initial_state: [
-      {
-        type: "m.room.encryption",
-        state_key: "",
-        content: { algorithm: "m.megolm.v1.aes-sha2" },
-      },
-      {
-        type: NET_PRIORITY_EVENT,
-        state_key: "",
-        content: { value: props.priority },
-      },
-      {
-        type: NET_NAME_EVENT,
-        state_key: "",
-        content: { value: props.name },
-      },
-      {
-        type: NET_COLOR_EVENT,
-        state_key: "",
-        content: { value: props.color },
-      },
-    ],
+    initial_state: initialState,
   });
   return create.room_id;
 }
@@ -118,6 +130,9 @@ export async function updateNetProperties(
   }
   if (patch.color !== undefined) {
     await client.sendStateEvent(matrixRoomId, NET_COLOR_EVENT as any, { value: patch.color }, "");
+  }
+  if (patch.selfMonitor !== undefined) {
+    await client.sendStateEvent(matrixRoomId, NET_SELF_MONITOR_EVENT as any, { value: patch.selfMonitor }, "");
   }
 }
 
