@@ -24,7 +24,10 @@
     "node-global-key-listener": "^0.3.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react-dom": "^18.3.0",
+    "mock-aws-s3": "file:./stubs/empty-package",
+    "aws-sdk": "file:./stubs/empty-package",
+    "nock": "file:./stubs/empty-package"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

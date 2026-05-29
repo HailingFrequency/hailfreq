@@ -1,0 +1,7 @@
+{
+  "name": "@hailfreq/empty-stub",
+  "version": "0.0.0",
+  "main": "index.js",
+  "type": "commonjs",
+  "description": "Stub for conditionally-required packages (mock-aws-s3 etc) that node-pre-gyp imports inside try/catch but Vite bakes into the main-process bundle"
+}
