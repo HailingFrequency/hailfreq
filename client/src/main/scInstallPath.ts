@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import type { ScInstallCandidate } from "../shared/ipc";
+import type { ScInstallCandidate, ScInstallSource } from "../shared/ipc";
 
 export type { ScInstallCandidate };
 
@@ -16,15 +16,14 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-async function probeBranches(installRoot: string, source: string): Promise<ScInstallCandidate[]> {
-  const out: ScInstallCandidate[] = [];
-  for (const branch of SC_BRANCHES) {
-    const candidate = path.join(installRoot, branch, "Game.log");
-    if (await fileExists(candidate)) {
-      out.push({ gameLogPath: candidate, branch, source });
-    }
-  }
-  return out;
+async function probeBranches(installRoot: string, source: ScInstallSource): Promise<ScInstallCandidate[]> {
+  const results = await Promise.all(
+    SC_BRANCHES.map(async (branch) => {
+      const candidate = path.join(installRoot, branch, "Game.log");
+      return (await fileExists(candidate)) ? { gameLogPath: candidate, branch, source } : null;
+    }),
+  );
+  return results.filter((c): c is ScInstallCandidate => c !== null);
 }
 
 async function findWindows(): Promise<ScInstallCandidate[]> {
@@ -40,25 +39,27 @@ async function findWindows(): Promise<ScInstallCandidate[]> {
   return out;
 }
 
-async function scanDirForWinePrefix(baseDir: string, source: string): Promise<ScInstallCandidate[]> {
-  const out: ScInstallCandidate[] = [];
+async function scanDirForWinePrefix(baseDir: string, source: ScInstallSource): Promise<ScInstallCandidate[]> {
+  let entries: import("node:fs").Dirent[];
   try {
-    const entries = await fs.readdir(baseDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const driveC = path.join(baseDir, entry.name, "drive_c");
-      const installRoot = path.join(driveC, "Program Files", "Roberts Space Industries", "StarCitizen");
-      try {
-        await fs.access(installRoot);
-        out.push(...(await probeBranches(installRoot, source)));
-      } catch {
-        // Not a SC prefix; ignore
-      }
-    }
+    entries = await fs.readdir(baseDir, { withFileTypes: true });
   } catch {
-    // baseDir doesn't exist; ignore
+    return [];
   }
-  return out;
+  const arrays = await Promise.all(
+    entries
+      .filter((e) => e.isDirectory())
+      .map(async (entry) => {
+        const installRoot = path.join(baseDir, entry.name, "drive_c", "Program Files", "Roberts Space Industries", "StarCitizen");
+        try {
+          await fs.access(installRoot);
+        } catch {
+          return [];
+        }
+        return probeBranches(installRoot, source);
+      }),
+  );
+  return arrays.flat();
 }
 
 async function findLinux(): Promise<ScInstallCandidate[]> {
@@ -87,25 +88,29 @@ async function findLinux(): Promise<ScInstallCandidate[]> {
   // Steam Proton
   const protonBase = path.join(home, ".steam", "steam", "steamapps", "compatdata");
   try {
-    const entries = await fs.readdir(protonBase, { withFileTypes: true });
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      const installRoot = path.join(
-        protonBase,
-        e.name,
-        "pfx",
-        "drive_c",
-        "Program Files",
-        "Roberts Space Industries",
-        "StarCitizen",
-      );
-      try {
-        await fs.access(installRoot);
-        out.push(...(await probeBranches(installRoot, "steam-proton")));
-      } catch {
-        // Not a SC prefix; ignore
-      }
-    }
+    const protonEntries = await fs.readdir(protonBase, { withFileTypes: true });
+    const protonArrays = await Promise.all(
+      protonEntries
+        .filter((e) => e.isDirectory())
+        .map(async (e) => {
+          const installRoot = path.join(
+            protonBase,
+            e.name,
+            "pfx",
+            "drive_c",
+            "Program Files",
+            "Roberts Space Industries",
+            "StarCitizen",
+          );
+          try {
+            await fs.access(installRoot);
+          } catch {
+            return [];
+          }
+          return probeBranches(installRoot, "steam-proton");
+        }),
+    );
+    out.push(...protonArrays.flat());
   } catch {
     // protonBase doesn't exist; ignore
   }
@@ -121,5 +126,8 @@ export async function findScInstallCandidates(): Promise<ScInstallCandidate[]> {
 }
 
 export async function validateGameLogPath(p: string): Promise<boolean> {
+  if (typeof p !== "string") return false;
+  if (!path.isAbsolute(p)) return false;
+  if (path.basename(p) !== "Game.log") return false;
   return fileExists(p);
 }

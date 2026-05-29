@@ -13,13 +13,22 @@ export interface StoredCredentials {
   homeserverUrl: string;
 }
 
+export type ScInstallSource =
+  | "registry"
+  | "default-windows"
+  | "wine-lutris"
+  | "wine-default"
+  | "bottles"
+  | "steam-proton"
+  | "manual";
+
 export interface ScInstallCandidate {
   /** Absolute path to a Game.log file that exists. */
   gameLogPath: string;
   /** Which branch this is (LIVE / PTU / EPTU). */
   branch: string;
-  /** Source hint for UI: "registry", "default-windows", "wine-lutris", "wine-default", "bottles", "steam-proton", "manual" */
-  source: string;
+  /** Source hint for UI. */
+  source: ScInstallSource;
 }
 
 // Source of truth for all IPC channels. Add new channels here.

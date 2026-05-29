@@ -88,10 +88,7 @@ export const settings = new Store<Settings>({
   // Only write back if the migration actually changed something
   const changed = JSON.stringify(current) !== JSON.stringify(migrated);
   if (changed) {
-    settings.clear();
-    settings.set("servers", migrated.servers);
-    settings.set("activeServerId", migrated.activeServerId);
-    settings.set("ui", migrated.ui);
+    settings.store = migrated as unknown as Record<string, unknown>;
   }
 }
 
