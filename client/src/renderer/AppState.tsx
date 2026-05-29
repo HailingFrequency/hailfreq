@@ -23,7 +23,7 @@ import type { CrewBoardingToastEntry } from "./components/CrewBoardingToast";
 import { VoiceEngine } from "./voice/VoiceEngine";
 import { ScIntegration } from "./sc/ScIntegration";
 import { ShareEngine } from "./share/ShareEngine";
-import type { ActiveShareSummary } from "./share/types";
+import type { ActiveShareSummary, LocalShareState } from "./share/types";
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -49,6 +49,11 @@ interface ServerInstance {
    * can react to share start/end without polling.
    */
   activeShares: ActiveShareSummary[];
+  /**
+   * Mirrors the local user's current share state into React state so the
+   * SharingStatusBar in Home re-renders reactively when sharing starts/ends.
+   */
+  localShare: LocalShareState | null;
   screen:
     | { kind: "loading" }
     | { kind: "login" }
@@ -148,6 +153,12 @@ function wireShareEngineEvents(
         });
       });
     },
+    onLocalShareStarted: (state) => {
+      setState((prev) => patchServer(prev, serverId, { localShare: state }));
+    },
+    onLocalShareEnded: () => {
+      setState((prev) => patchServer(prev, serverId, { localShare: null }));
+    },
   });
 }
 
@@ -169,7 +180,7 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
         });
         const voiceEngine = new VoiceEngine(handle.client);
         const shareEngine = new ShareEngine(voiceEngine);
-        return { entry, handle, voiceEngine, shareEngine, screen: { kind: "home" }, unreadCount: 0, crewBoardingToasts: [], activeShares: [] };
+        return { entry, handle, voiceEngine, shareEngine, screen: { kind: "home" }, unreadCount: 0, crewBoardingToasts: [], activeShares: [], localShare: null };
       }
     } catch {
       // Token expired, homeserver unreachable, or crypto init failed — fall through to login
@@ -177,7 +188,7 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
     // Clear stale/invalid credentials
     await window.hailfreq.invoke("tokens:clear", { serverId: entry.id });
   }
-  return { entry, screen: { kind: "login" }, unreadCount: 0, crewBoardingToasts: [], activeShares: [] };
+  return { entry, screen: { kind: "login" }, unreadCount: 0, crewBoardingToasts: [], activeShares: [], localShare: null };
 }
 
 async function validateAccessToken(homeserverUrl: string, accessToken: string): Promise<boolean> {
@@ -611,6 +622,7 @@ export function AppState() {
             voiceEngine,
             shareEngine,
             activeShares: [],
+            localShare: null,
             entry: {
               ...s.servers.get(serverId)!.entry,
               userId: creds.userId,
@@ -687,6 +699,7 @@ export function AppState() {
             voiceEngine: undefined,
             shareEngine: undefined,
             activeShares: [],
+            localShare: null,
             entry: {
               ...s.servers.get(serverId)!.entry,
               userId: "",
@@ -1026,7 +1039,7 @@ function ActiveServerView({
   onAddToAllowlist,
   focusedAppPtt,
 }: ActiveServerViewProps) {
-  const { screen, entry, handle, voiceEngine, shareEngine, activeShares, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
+  const { screen, entry, handle, voiceEngine, shareEngine, activeShares, localShare, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
 
   // Expose the Matrix ClientHandle for Plan 6+ E2E tests when running under HAILFREQ_TEST=1.
   // Mirrors the window.__voiceEngine pattern in NetListPanel.
@@ -1128,6 +1141,7 @@ function ActiveServerView({
           voiceEngine={voiceEngine}
           shareEngine={shareEngine}
           activeShares={activeShares}
+          localShare={localShare}
           onLogout={onLogout}
           serverEntry={entry}
           onTransmittingChange={onTransmittingChange}

@@ -35,6 +35,11 @@ interface NetListPanelProps {
    * re-renders reactively when remote shares start or end.
    */
   activeShares?: ActiveShareSummary[];
+  /**
+   * The local user's current share state, mirrored from AppState React state.
+   * Passed down from Home so that AppState is the single source of truth.
+   */
+  localShare?: LocalShareState | null;
   serverEntry: ServerEntry;
   onTransmittingChange: (net: string | null) => void;
   /**
@@ -116,7 +121,7 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
   return prefs;
 }
 
-export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine, activeShares = [], serverEntry, onTransmittingChange, focusedAppPtt }: NetListPanelProps) {
+export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine, activeShares = [], localShare = null, serverEntry, onTransmittingChange, focusedAppPtt }: NetListPanelProps) {
   const [nets, setNets] = useState<NetSummary[]>([]);
   const [uiState, setUiState] = useState<Map<string, PerNetUiState>>(new Map());
   // Use the shared engine from AppState when available; fall back to a local
@@ -131,13 +136,7 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
   const [availableChirps, setAvailableChirps] = useState<ChirpSummary[]>([]);
 
   // Share UI state
-  // localShare mirrors ShareEngine.getLocalShare() and is updated via event subscription.
-  // NOTE: ShareEngine.on() merges listeners and does not support deduplication — calling
-  // it on each remount would accumulate stale closures. This is acceptable for v1 because
-  // NetListPanel does not remount frequently; the shareEngine is replaced wholesale on logout.
-  const [localShare, setLocalShare] = useState<LocalShareState | null>(
-    () => shareEngine?.getLocalShare() ?? null,
-  );
+  // localShare is now owned by AppState and passed down as a prop (single source of truth).
   // pickerForRoomId: non-null while the SourcePickerModal is open for a specific net
   const [pickerForRoomId, setPickerForRoomId] = useState<string | null>(null);
   // viewingShare: set when the user clicks the 📺 viewer button (Task 7 renders the pane)
@@ -246,20 +245,6 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
     const i = setInterval(() => setTransmitting(ptt.getTransmittingNet()), 100);
     return () => clearInterval(i);
   }, [ptt]);
-
-  // Subscribe to ShareEngine local-share events so localShare state stays
-  // in sync with engine state across start/stop without polling.
-  useEffect(() => {
-    if (!shareEngine) return;
-    const update = () => setLocalShare(shareEngine.getLocalShare());
-    shareEngine.on({
-      onLocalShareStarted: update,
-      onLocalShareEnded: update,
-    });
-    // No off() method on ShareEngine v1 — listeners are merged and cleared
-    // wholesale on shareEngine.shutdown() (which happens on logout).
-    return () => {/* no-op for v1 */};
-  }, [shareEngine]);
 
   // Shutdown ptt controller on unmount.
   // The VoiceEngine is NOT shut down here when it was provided externally —

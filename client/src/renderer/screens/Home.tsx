@@ -15,7 +15,9 @@ import {
 } from "../components/CrewBoardingToast";
 import type { VoiceEngine } from "../voice/VoiceEngine";
 import type { ShareEngine } from "../share/ShareEngine";
-import type { ActiveShareSummary } from "../share/types";
+import type { ActiveShareSummary, LocalShareState } from "../share/types";
+import { SharingStatusBar } from "../components/SharingStatusBar";
+import { listNets } from "../matrix/nets";
 
 /** Max toasts shown simultaneously. */
 const MAX_CREW_TOASTS = 3;
@@ -41,6 +43,11 @@ interface HomeProps {
    * Forwarded to NetListPanel so it re-renders reactively when shares start/end.
    */
   activeShares: ActiveShareSummary[];
+  /**
+   * The local user's current share state, mirrored from AppState React state.
+   * Used to render the SharingStatusBar when the local user is sharing.
+   */
+  localShare: LocalShareState | null;
   onLogout: () => Promise<void> | void;
   serverEntry: ServerEntry;
   onTransmittingChange: (net: string | null) => void;
@@ -62,6 +69,7 @@ export function Home({
   voiceEngine,
   shareEngine,
   activeShares,
+  localShare,
   onLogout,
   serverEntry,
   onTransmittingChange,
@@ -108,6 +116,16 @@ export function Home({
     await onAddToAllowlist(rsiHandle);
   }
 
+  /** Resolve the display name for the net the local user is currently sharing to. */
+  function resolveNetName(share: LocalShareState | null): string | null {
+    if (!share) return null;
+    const nets = listNets(client);
+    const match = nets.find((n) => n.matrixRoomId === share.matrixRoomId);
+    if (match) return match.properties.name;
+    // Fallback: strip leading "!" and server part from the room id
+    return share.matrixRoomId.split(":")[0].replace("!", "");
+  }
+
   // When admin board is open, render it full-screen instead of the normal content
   if (showAdmin) {
     return <AdminBoard client={client} onClose={() => setShowAdmin(false)} />;
@@ -115,6 +133,11 @@ export function Home({
 
   return (
     <div className="flex h-full flex-col">
+      <SharingStatusBar
+        localShare={localShare}
+        netName={resolveNetName(localShare)}
+        onStop={() => void shareEngine?.stopLocalShare()}
+      />
       <header className="flex items-center justify-between border-b border-slate-800 px-6 py-3">
         <div>
           <h1 className="text-lg font-semibold text-brand-400">Hailfreq</h1>
@@ -166,6 +189,7 @@ export function Home({
           voiceEngine={voiceEngine}
           shareEngine={shareEngine}
           activeShares={activeShares}
+          localShare={localShare}
           serverEntry={serverEntry}
           onTransmittingChange={onTransmittingChange}
           focusedAppPtt={focusedAppPtt}
