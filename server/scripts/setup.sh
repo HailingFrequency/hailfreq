@@ -101,6 +101,28 @@ echo "→ Building livekit-auth image"
 docker compose --file compose.yml build livekit-auth 2>&1 | tail -3 || \
   podman compose --file compose.yml build livekit-auth 2>&1 | tail -3
 
+# Rootless podman fix: synapse runs as UID 991 inside the container, which maps
+# to a high UID in the rootless namespace. The synapse_data volume is created by
+# podman with the wrong ownership and synapse can't write its signing.key.
+# Apply the fix automatically when:
+#   - We're using podman (not docker)
+#   - We're rootless (not running as root)
+#   - The volume already exists
+COMPOSE_TOOL=""
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  COMPOSE_TOOL="docker"
+elif command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
+  COMPOSE_TOOL="podman"
+fi
+
+if [[ "$COMPOSE_TOOL" == "podman" ]] && [[ "$(id -u)" != "0" ]]; then
+  SYNAPSE_VOLUME_PATH="$(podman volume inspect hailfreq_synapse_data 2>/dev/null | jq -r '.[0].Mountpoint // empty')"
+  if [[ -n "$SYNAPSE_VOLUME_PATH" && -d "$SYNAPSE_VOLUME_PATH" ]]; then
+    echo "→ Applying rootless podman chown to $SYNAPSE_VOLUME_PATH"
+    podman unshare chown -R 991:991 "$SYNAPSE_VOLUME_PATH" || true
+  fi
+fi
+
 echo ""
 echo "Setup complete. Next steps:"
 if [[ "${HAILFREQ_DOMAIN}" == "${HAILFREQ_SERVER_HOSTNAME}" ]]; then
