@@ -12,7 +12,7 @@ import { getFocusedApp } from "./windowFocus";
 import type { FocusedAppInfo } from "../shared/ipc";
 import { showNotification } from "./notifications";
 import type { NotifyOptions } from "./notifications";
-import type { Settings, ServerEntry } from "../shared/types";
+import type { Settings, ServerEntry, FocusedAppPttSettings } from "../shared/types";
 import type { StoredCredentials } from "../shared/ipc";
 
 export function registerIpcHandlers(): void {
@@ -119,5 +119,25 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("focus:get", (): FocusedAppInfo => {
     return getFocusedApp();
+  });
+
+  ipcMain.handle("settings:setFocusedAppPtt", (_event, args: unknown): void => {
+    if (args === null || typeof args !== "object" || !("focusedAppPtt" in args)) {
+      throw new Error("settings:setFocusedAppPtt: args must be { focusedAppPtt: FocusedAppPttSettings }");
+    }
+    const { focusedAppPtt } = args as { focusedAppPtt: unknown };
+    if (
+      focusedAppPtt === null ||
+      typeof focusedAppPtt !== "object" ||
+      typeof (focusedAppPtt as FocusedAppPttSettings).enabled !== "boolean" ||
+      !Array.isArray((focusedAppPtt as FocusedAppPttSettings).allowlistEntries)
+    ) {
+      throw new Error("settings:setFocusedAppPtt: focusedAppPtt must have boolean enabled + string[] allowlistEntries");
+    }
+    const list = (focusedAppPtt as FocusedAppPttSettings).allowlistEntries;
+    if (!list.every((e) => typeof e === "string")) {
+      throw new Error("settings:setFocusedAppPtt: allowlistEntries must contain only strings");
+    }
+    settings.set("focusedAppPtt", focusedAppPtt as FocusedAppPttSettings);
   });
 }

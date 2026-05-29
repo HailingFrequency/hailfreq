@@ -801,6 +801,18 @@ export function AppState() {
   );
 
   /**
+   * Save the global focused-app PTT filter settings.
+   * Called by the FocusedAppPttSettings panel via Sidebar.
+   */
+  const handleSaveFocusedAppPtt = useCallback(
+    async (value: FocusedAppPttSettings): Promise<void> => {
+      await window.hailfreq.invoke("settings:setFocusedAppPtt", { focusedAppPtt: value });
+      setState((prev) => ({ ...prev, focusedAppPtt: value }));
+    },
+    [],
+  );
+
+  /**
    * Save per-server SC integration settings and (optionally) the global
    * scInstallPath. Called by the ScIntegrationSettings panel via Sidebar.
    */
@@ -867,8 +879,10 @@ export function AppState() {
         onRenameServer={handleRenameServer}
         onToggleNotifications={handleToggleNotifications}
         onSaveScIntegration={handleSaveScIntegration}
+        onSaveFocusedAppPtt={handleSaveFocusedAppPtt}
         onReorder={handleReorder}
         scInstallPath={state.scInstallPath}
+        focusedAppPtt={state.focusedAppPtt}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (

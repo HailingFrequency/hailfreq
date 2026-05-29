@@ -1,4 +1,4 @@
-import type { Settings, ServerEntry } from "./types";
+import type { Settings, ServerEntry, FocusedAppPttSettings } from "./types";
 
 export interface ChirpSummary {
   id: string;
@@ -78,6 +78,7 @@ export interface IpcChannels {
   "sc:startWatch": { args: [{ gameLogPath: string }]; result: void };
   "sc:stopWatch": { args: []; result: void };
   "focus:get": { args: []; result: FocusedAppInfo };
+  "settings:setFocusedAppPtt": { args: [{ focusedAppPtt: FocusedAppPttSettings }]; result: void };
 }
 
 export type IpcChannelName = keyof IpcChannels;

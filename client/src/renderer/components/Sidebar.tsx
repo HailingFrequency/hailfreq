@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
-import type { ScIntegrationSettings } from "@shared/types";
+import type { ScIntegrationSettings, FocusedAppPttSettings } from "@shared/types";
 import type { ServerEntry } from "@shared/types";
 import { ServerIcon } from "./ServerIcon";
 import { ServerContextMenu } from "./ServerContextMenu";
 import { ScIntegrationSettings as ScIntegrationSettingsPanel } from "../screens/ScIntegrationSettings";
+import { FocusedAppPttSettings as FocusedAppPttSettingsPanel } from "../screens/FocusedAppPttSettings";
 
 export interface SidebarServerItem {
   entry: ServerEntry;
@@ -23,9 +24,12 @@ interface SidebarProps {
     serverId: string,
     patch: { scIntegration: ScIntegrationSettings; scInstallPath: string | undefined },
   ) => Promise<void>;
+  onSaveFocusedAppPtt?: (value: FocusedAppPttSettings) => Promise<void>;
   onReorder?: (orderedIds: string[]) => void;
   /** Global Game.log path (passed through from AppState for the SC panel). */
   scInstallPath?: string;
+  /** Global focused-app PTT settings (passed through from AppState). */
+  focusedAppPtt?: FocusedAppPttSettings;
 }
 
 export function Sidebar({
@@ -37,11 +41,14 @@ export function Sidebar({
   onRenameServer,
   onToggleNotifications,
   onSaveScIntegration,
+  onSaveFocusedAppPtt,
   onReorder,
   scInstallPath,
+  focusedAppPtt,
 }: SidebarProps) {
   const [contextMenuFor, setContextMenuFor] = useState<ServerEntry | null>(null);
   const [scIntegrationFor, setScIntegrationFor] = useState<ServerEntry | null>(null);
+  const [focusedAppPttOpen, setFocusedAppPttOpen] = useState(false);
   // Track the server being dragged over for drop-target highlighting
   const dragOverIdRef = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -120,6 +127,18 @@ export function Sidebar({
         >
           +
         </button>
+        {onSaveFocusedAppPtt && (
+          <button
+            onClick={() => setFocusedAppPttOpen(true)}
+            title="PTT focus settings"
+            className="mt-auto flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
+          >
+            {/* Simple target / crosshair icon representing PTT focus */}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12zm0-2a4 4 0 100-8 4 4 0 000 8zm0-2a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
       </aside>
       {contextMenuFor && (
         <ServerContextMenu
@@ -149,6 +168,13 @@ export function Sidebar({
           scInstallPath={scInstallPath}
           onSave={(patch) => onSaveScIntegration(scIntegrationFor.id, patch)}
           onClose={() => setScIntegrationFor(null)}
+        />
+      )}
+      {focusedAppPttOpen && onSaveFocusedAppPtt && (
+        <FocusedAppPttSettingsPanel
+          focusedAppPtt={focusedAppPtt}
+          onSave={onSaveFocusedAppPtt}
+          onClose={() => setFocusedAppPttOpen(false)}
         />
       )}
     </>
