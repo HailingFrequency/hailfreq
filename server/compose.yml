@@ -56,8 +56,10 @@ services:
       HAILFREQ_DOMAIN: ${HAILFREQ_DOMAIN:?HAILFREQ_DOMAIN not set}
       HAILFREQ_SERVER_HOSTNAME: ${HAILFREQ_SERVER_HOSTNAME:?HAILFREQ_SERVER_HOSTNAME not set}
       HAILFREQ_ADMIN_EMAIL: ${HAILFREQ_ADMIN_EMAIL:?HAILFREQ_ADMIN_EMAIL not set}
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:
@@ -132,3 +134,57 @@ volumes:
   synapse_data:
   caddy_data:
   caddy_config:
+
+configs:
+  caddyfile:
+    content: |
+      {
+        email ${HAILFREQ_ADMIN_EMAIL}
+      }
+
+      ${HAILFREQ_DOMAIN} {
+        handle /.well-known/matrix/client {
+          header Content-Type application/json
+          header Access-Control-Allow-Origin *
+          respond `{"m.homeserver":{"base_url":"https://${HAILFREQ_SERVER_HOSTNAME}"}}`
+        }
+        handle /.well-known/matrix/server {
+          header Content-Type application/json
+          respond `{"m.server":"${HAILFREQ_SERVER_HOSTNAME}:443"}`
+        }
+        handle /_matrix/* {
+          reverse_proxy synapse:8008
+        }
+        handle /_synapse/* {
+          reverse_proxy synapse:8008
+        }
+        handle {
+          respond "Hailfreq — use a Matrix client and enter ${HAILFREQ_DOMAIN} as the server URL." 200
+        }
+        encode gzip
+      }
+
+      ${HAILFREQ_SERVER_HOSTNAME} {
+        handle /_matrix/* {
+          reverse_proxy synapse:8008
+        }
+        handle /_synapse/* {
+          reverse_proxy synapse:8008
+        }
+        handle /lk-auth/* {
+          uri strip_prefix /lk-auth
+          reverse_proxy livekit-auth:8088
+        }
+        handle /livekit/* {
+          uri strip_prefix /livekit
+          reverse_proxy host.docker.internal:7880
+        }
+        handle {
+          respond "Hailfreq server." 200
+        }
+        encode gzip
+        log {
+          output stdout
+          format console
+        }
+      }
