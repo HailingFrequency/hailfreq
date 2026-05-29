@@ -261,6 +261,9 @@ export class ShareEngine {
         // Create updated summary with audio track — immutable-style replacement
         const updated: ActiveShareSummary = { ...existing, audioTrack };
         this.remoteShares.set(key, updated);
+        // Re-emit onShareStarted so subscribers refresh their summary reference
+        // (the wireShareEngineEvents handler dedupes by (roomId, identity)).
+        this.listeners.onShareStarted?.(updated);
       } else {
         // Issue 2: audio arrived before video — stash until ScreenShare video arrives
         this.pendingAudio.set(key, audioTrack);
