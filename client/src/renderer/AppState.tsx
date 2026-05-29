@@ -686,52 +686,45 @@ export function AppState() {
    * - Updates the live ScIntegration instance immediately (no render cycle needed)
    */
   const makeAddToAllowlist = useCallback(
-    (serverId: string) => async (rsiHandle: string) => {
+    (serverId: string) => async (rsiHandle: string): Promise<void> => {
       const trimmed = rsiHandle.trim();
-      if (!trimmed) return;
+      if (!trimmed) throw new Error("Empty handle");
 
-      setState((prev) => {
-        const srv = prev.servers.get(serverId);
-        if (!srv) return prev;
+      const instance = state.servers.get(serverId);
+      if (!instance) throw new Error("Server not found");
 
-        const current = srv.entry.scIntegration ?? {
-          enabled: false,
-          autoInviteAllowlist: [],
-          autoCloseOnDestruction: true,
-        };
+      const current = instance.entry.scIntegration ?? {
+        enabled: false,
+        autoInviteAllowlist: [],
+        autoCloseOnDestruction: true,
+      };
 
-        // Case-insensitive dedupe
-        const alreadyPresent = current.autoInviteAllowlist.some(
-          (h) => h.toLowerCase() === trimmed.toLowerCase(),
-        );
-        if (alreadyPresent) return prev;
+      // Case-insensitive dedupe — no-op if already present
+      const alreadyPresent = current.autoInviteAllowlist.some(
+        (h) => h.toLowerCase() === trimmed.toLowerCase(),
+      );
+      if (alreadyPresent) return;
 
-        const updatedIntegration = {
-          ...current,
-          autoInviteAllowlist: [...current.autoInviteAllowlist, trimmed],
-        };
-        const updatedEntry: ServerEntry = {
-          ...srv.entry,
-          scIntegration: updatedIntegration,
-        };
+      const updatedIntegration = {
+        ...current,
+        autoInviteAllowlist: [...current.autoInviteAllowlist, trimmed],
+      };
+      const updatedEntry: ServerEntry = {
+        ...instance.entry,
+        scIntegration: updatedIntegration,
+      };
 
-        // Update the live ScIntegration instance so it takes effect immediately
-        scIntegrationsRef.current.get(serverId)?.setServerEntry(updatedEntry);
-
-        // Fire-and-forget IPC persist
-        void window.hailfreq
-          .invoke("servers:update", {
-            serverId,
-            patch: { scIntegration: updatedIntegration },
-          })
-          .catch((err: unknown) => {
-            console.error("[AppState] onAddToAllowlist persist failed:", err);
-          });
-
-        return patchServer(prev, serverId, { entry: updatedEntry });
+      // Persist FIRST — if this throws, neither state nor live instance is mutated
+      await window.hailfreq.invoke("servers:update", {
+        serverId,
+        patch: { scIntegration: updatedIntegration },
       });
+
+      // Now safe to update live instance and React state
+      scIntegrationsRef.current.get(serverId)?.setServerEntry(updatedEntry);
+      setState((prev) => patchServer(prev, serverId, { entry: updatedEntry }));
     },
-    [],
+    [state.servers],
   );
 
   const handleReorder = useCallback((orderedIds: string[]) => {

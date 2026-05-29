@@ -26,6 +26,7 @@ export class ScIntegration {
   private watcher: ScWatcher | null = null;
   private listeners: ScIntegrationEvents = {};
   private pendingShipNets = new Map<string, Promise<string>>();
+  private stopped = false;
 
   private shipNetKey(shipType: string, owner: string): string {
     return `${shipType}::${owner}`;
@@ -47,7 +48,7 @@ export class ScIntegration {
   }
 
   async start(gameLogPath: string): Promise<void> {
-    if (this.watcher) return;
+    if (this.watcher || this.stopped) return;
     const watcher = new ScWatcher();
     watcher.on({
       onOwnShipBoarded: (e: YouJoinedChannelEvent) =>
@@ -58,10 +59,16 @@ export class ScIntegration {
         void this.handleShipDestroyed(e.shipType, e.owner),
     });
     await watcher.start(gameLogPath);
+    if (this.stopped) {
+      // stop() ran during our await; shut down the orphan watcher immediately
+      await watcher.stop();
+      return;
+    }
     this.watcher = watcher;
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
     if (!this.watcher) return;
     await this.watcher.stop();
     this.watcher = null;
