@@ -37,6 +37,13 @@ export interface FocusedAppInfo {
   isWayland: boolean;
 }
 
+export interface DesktopCaptureSource {
+  id: string;
+  name: string;
+  thumbnailDataUrl: string;
+  kind: "screen" | "window";
+}
+
 // Source of truth for all IPC channels. Add new channels here.
 export interface IpcChannels {
   "app:version": { args: []; result: string };
@@ -79,6 +86,7 @@ export interface IpcChannels {
   "sc:stopWatch": { args: []; result: void };
   "focus:get": { args: []; result: FocusedAppInfo };
   "settings:setFocusedAppPtt": { args: [{ focusedAppPtt: FocusedAppPttSettings }]; result: void };
+  "share:listSources": { args: []; result: DesktopCaptureSource[] };
 }
 
 export type IpcChannelName = keyof IpcChannels;

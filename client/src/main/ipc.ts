@@ -9,7 +9,8 @@ import { listChirps, readChirp, openChirpFolder } from "./chirps";
 import { findScInstallCandidates, validateGameLogPath } from "./scInstallPath";
 import { startWatch, stopWatch } from "./scLogTail";
 import { getFocusedApp } from "./windowFocus";
-import type { FocusedAppInfo } from "../shared/ipc";
+import { listSources } from "./desktopCapture";
+import type { FocusedAppInfo, DesktopCaptureSource } from "../shared/ipc";
 import { showNotification } from "./notifications";
 import type { NotifyOptions } from "./notifications";
 import type { Settings, ServerEntry, FocusedAppPttSettings } from "../shared/types";
@@ -119,6 +120,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("focus:get", (): FocusedAppInfo => {
     return getFocusedApp();
+  });
+
+  ipcMain.handle("share:listSources", async (): Promise<DesktopCaptureSource[]> => {
+    return listSources();
   });
 
   ipcMain.handle("settings:setFocusedAppPtt", (_event, args: unknown): void => {
