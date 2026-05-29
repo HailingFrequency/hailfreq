@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FocusedAppPttSettings as FocusedAppPttSettingsType } from "@shared/types";
 import type { FocusedAppInfo } from "@shared/ipc";
 import { Button } from "../components/Button";
@@ -39,6 +39,12 @@ export function FocusedAppPttSettings({ focusedAppPtt, onSave, onClose }: Props)
       setFocusBusy(false);
     }
   }
+
+  // Seed currentFocus on mount so the Wayland banner shows immediately
+  // for Wayland users without requiring them to click "Show current focus".
+  useEffect(() => {
+    window.hailfreq.invoke("focus:get").then(setCurrentFocus).catch(() => {});
+  }, []);
 
   function handleAddEntry() {
     const trimmed = entryInput.trim();
