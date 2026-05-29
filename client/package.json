@@ -1,6 +1,6 @@
 {
   "name": "hailfreq-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Privacy-first Matrix desktop client for tactical voice ops",
   "private": true,
   "type": "module",

@@ -4,6 +4,34 @@ All notable changes to Hailfreq are recorded here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-05-29
+
+First polish pass after initial deployment. Closes the gaps that prevented a fresh tester from getting end-to-end in a net without finding a second person.
+
+### Client
+
+- **AutoDiscovery** via matrix-js-sdk's `findClientConfig` — clients now consult `.well-known/matrix/client` before connecting (the server-side `/_matrix` proxy at apex stays as defense-in-depth)
+- **Admin button** reappears immediately when a user creates a net that promotes them to admin (was: only after app restart)
+- **Recovery Key "Copy to Clipboard"** shows "Copied ✓" confirmation for 2 seconds + a success-variant button style, so the user knows the copy landed
+- Removed the `localhost:8080` dev default from the initial server list (was a leftover from dev that confused first-run users)
+- **Mic input RMS level meter** on each monitored NetRow next to the In control — confirms the mic is being captured before speaking into silence
+- **Visible "🔴 LIVE" indicator** with rose-pulse on the NetRow when actively transmitting + rose-border row accent so the PTT key detection is unambiguous
+- **Per-net self-monitor toggle** ("Hear yourself when transmitting") — routes mic locally via Web Audio so a single user can verify the full mic→encode→publish→play loop without a second tester
+- **First-run audio setup wizard** — 3-step flow (input device + mic level + output device + test tone + PTT mode + key capture) that runs on first sign-in and persists `audioSetupComplete` so it doesn't reappear
+- Cleaned up redundant `vite.config.ts` aliases and `src/main/_stubs/` after the npm stub-package approach (in `stubs/empty-package`) proved sufficient for the mock-aws-s3 issue
+
+### Server kit
+
+- `healthcheck.sh` and `create-admin.sh` now dispatch between `docker compose` and `podman compose` automatically — rootless podman supported out of the box, including handling podman's different `ps --format json` shape and lack of a `Health` field (parsed from the `Status` string instead)
+- `setup.sh` auto-applies the `podman unshare chown -R 991:991` fix to the synapse_data volume when rootless podman is detected — no manual intervention needed on first run anymore
+- New `server/docs/pasta-networking.md` documents the switch to pasta as the default rootless network backend, what it does and does not fix, and the honest limitations around source-IP preservation through port-publishing in rootless podman
+
+### Deployment milestone
+
+This is the version running at https://rpk.chat (delegated to https://server.rpk.chat), the first publicly accessible Hailfreq server.
+
+[0.2.0]: https://github.com/HailingFrequency/hailfreq/releases/tag/v0.2.0
+
 ## [0.1.0] - 2026-05-29
 
 First public release. Ships the complete planned feature set for v1.5 from the Hailfreq design spec.
