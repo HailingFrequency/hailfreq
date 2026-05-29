@@ -1,10 +1,44 @@
-import { createClient, MatrixClient } from "matrix-js-sdk";
+import { AutoDiscovery, AutoDiscoveryAction, createClient, MatrixClient } from "matrix-js-sdk";
 import type { ISSOFlow } from "matrix-js-sdk/lib/@types/auth";
 import type { Credentials } from "./types";
 
 export interface ClientHandle {
   client: MatrixClient;
   shutdown(): Promise<void>;
+}
+
+/**
+ * Resolve a user-typed server URL to the actual Matrix homeserver base URL
+ * via the .well-known/matrix/client delegation mechanism.
+ *
+ * States handled:
+ *   SUCCESS    — well-known present and valid; use the delegated base_url.
+ *   IGNORE     — no well-known found (e.g. local dev); fall back to the typed URL.
+ *   PROMPT     — partial/ambiguous well-known; fall back to the typed URL.
+ *   FAIL_PROMPT — delegation failed but client may still try; fall back to typed URL.
+ *   FAIL_ERROR  — delegation definitively failed; throw so the caller surfaces the error.
+ */
+export async function resolveHomeserverUrl(serverUrl: string): Promise<string> {
+  const domain = serverUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const discovery = await AutoDiscovery.findClientConfig(domain);
+  const hs = discovery["m.homeserver"];
+  const state = hs?.state;
+
+  if (state === AutoDiscovery.SUCCESS && hs.base_url) {
+    return hs.base_url;
+  } else if (
+    state === AutoDiscoveryAction.IGNORE ||
+    state === AutoDiscovery.PROMPT ||
+    state === AutoDiscovery.FAIL_PROMPT
+  ) {
+    // No usable well-known — connect directly to the typed URL.
+    return `https://${domain}`;
+  } else {
+    // FAIL_ERROR or unexpected state.
+    throw new Error(
+      `Matrix well-known discovery failed for ${domain}: ${state ?? "unknown"} (${hs?.error ?? "no detail"})`,
+    );
+  }
 }
 
 /**
@@ -59,7 +93,8 @@ export async function loginWithPassword(
   username: string,
   password: string,
 ): Promise<Credentials> {
-  const tmp = createClient({ baseUrl: homeserverUrl });
+  const resolvedUrl = await resolveHomeserverUrl(homeserverUrl);
+  const tmp = createClient({ baseUrl: resolvedUrl });
   const resp = await tmp.login("m.login.password", {
     identifier: { type: "m.id.user", user: username },
     password,
@@ -69,7 +104,7 @@ export async function loginWithPassword(
     userId: resp.user_id,
     accessToken: resp.access_token,
     deviceId: resp.device_id,
-    homeserverUrl,
+    homeserverUrl: resolvedUrl,
   };
 }
 
@@ -80,7 +115,8 @@ export async function loginWithToken(
   homeserverUrl: string,
   loginToken: string,
 ): Promise<Credentials> {
-  const tmp = createClient({ baseUrl: homeserverUrl });
+  const resolvedUrl = await resolveHomeserverUrl(homeserverUrl);
+  const tmp = createClient({ baseUrl: resolvedUrl });
   const resp = await tmp.login("m.login.token", {
     token: loginToken,
     initial_device_display_name: "Hailfreq Desktop",
@@ -89,7 +125,7 @@ export async function loginWithToken(
     userId: resp.user_id,
     accessToken: resp.access_token,
     deviceId: resp.device_id,
-    homeserverUrl,
+    homeserverUrl: resolvedUrl,
   };
 }
 
@@ -104,7 +140,8 @@ export async function getLoginFlows(homeserverUrl: string): Promise<{
   supportsOidcSso: boolean;
   ssoIdentityProviders: { id: string; name: string; brand?: string }[];
 }> {
-  const tmp = createClient({ baseUrl: homeserverUrl });
+  const resolvedUrl = await resolveHomeserverUrl(homeserverUrl);
+  const tmp = createClient({ baseUrl: resolvedUrl });
   const resp = await tmp.loginFlows();
   const sso = resp.flows.find((f): f is ISSOFlow => f.type === "m.login.sso");
   return {
