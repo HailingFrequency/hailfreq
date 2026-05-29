@@ -1,0 +1,124 @@
+import type { MatrixClient } from "matrix-js-sdk";
+import type { VoiceEngine } from "../voice/VoiceEngine";
+import { ScWatcher } from "./ScWatcher";
+import { createShipNet, findShipNetByShip } from "../matrix/nets";
+import { generateSframeKey, uploadSframeKey } from "../voice/sframeKeys";
+import { lookupMatrixIdByRsiHandle } from "../matrix/profileCache";
+import type { ServerEntry } from "@shared/types";
+import type { YouJoinedChannelEvent, OtherJoinedChannelEvent, ShipDestroyedEvent } from "./events";
+
+export interface ScIntegrationEvents {
+  onCrewBoarded?: (info: {
+    rsiHandle: string;
+    matrixUserId: string | null;
+    shipNetRoomId: string;
+  }) => void;
+  onShipNetCreated?: (matrixRoomId: string) => void;
+  onShipNetClosed?: (matrixRoomId: string) => void;
+}
+
+export class ScIntegration {
+  private readonly client: MatrixClient;
+  private readonly engine: VoiceEngine;
+  private serverEntry: ServerEntry;
+  private watcher: ScWatcher | null = null;
+  private listeners: ScIntegrationEvents = {};
+
+  constructor(client: MatrixClient, engine: VoiceEngine, serverEntry: ServerEntry) {
+    this.client = client;
+    this.engine = engine;
+    this.serverEntry = serverEntry;
+  }
+
+  setServerEntry(entry: ServerEntry): void {
+    this.serverEntry = entry;
+  }
+
+  on(events: ScIntegrationEvents): this {
+    this.listeners = { ...this.listeners, ...events };
+    return this;
+  }
+
+  async start(gameLogPath: string): Promise<void> {
+    if (this.watcher) return;
+    const watcher = new ScWatcher();
+    watcher.on({
+      onOwnShipBoarded: (e: YouJoinedChannelEvent) =>
+        void this.handleOwnShipBoarded(e.shipType, e.owner),
+      onCrewJoined: (e: OtherJoinedChannelEvent) =>
+        void this.handleCrewJoined(e.player, e.shipType, e.owner),
+      onShipDestroyed: (e: ShipDestroyedEvent) =>
+        void this.handleShipDestroyed(e.shipType, e.owner),
+    });
+    await watcher.start(gameLogPath);
+    this.watcher = watcher;
+  }
+
+  async stop(): Promise<void> {
+    if (!this.watcher) return;
+    await this.watcher.stop();
+    this.watcher = null;
+  }
+
+  private async handleOwnShipBoarded(shipType: string, ownerNickname: string): Promise<void> {
+    const ownerMatrixId = this.client.getSafeUserId();
+    let roomId = findShipNetByShip(this.client, shipType, ownerNickname);
+    if (!roomId) {
+      roomId = await createShipNet(this.client, {
+        shipType,
+        ownerRsi: ownerNickname,
+        ownerMatrixId,
+      });
+      const keyBytes = generateSframeKey();
+      await uploadSframeKey(this.client, roomId, keyBytes);
+      this.listeners.onShipNetCreated?.(roomId);
+    }
+    await this.engine.monitorNet({ matrixRoomId: roomId, priority: 60 });
+  }
+
+  private async handleCrewJoined(
+    crewNickname: string,
+    shipType: string,
+    ownerNickname: string,
+  ): Promise<void> {
+    const shipNetRoomId = findShipNetByShip(this.client, shipType, ownerNickname);
+    if (!shipNetRoomId) return;
+
+    const matrixUserId = await lookupMatrixIdByRsiHandle(this.client, crewNickname);
+
+    this.listeners.onCrewBoarded?.({
+      rsiHandle: crewNickname,
+      matrixUserId,
+      shipNetRoomId,
+    });
+
+    const allowed = this.serverEntry.scIntegration?.autoInviteAllowlist.some(
+      (h) => h.toLowerCase() === crewNickname.toLowerCase(),
+    );
+    if (allowed && matrixUserId) {
+      try {
+        await this.client.invite(shipNetRoomId, matrixUserId);
+      } catch (err) {
+        console.error("auto-invite failed:", err);
+      }
+    }
+  }
+
+  private async handleShipDestroyed(
+    shipType: string,
+    eventOwner: string | null,
+  ): Promise<void> {
+    if (!this.serverEntry.scIntegration?.autoCloseOnDestruction) return;
+    // Prefer the owner extracted from the destruction event; fall back to the
+    // nickname the watcher recorded at login time (destruction events may omit
+    // the owner field in some log versions).
+    const ownerNickname = eventOwner ?? this.watcher?.getLocalNickname();
+    if (!ownerNickname) return;
+    const shipNetRoomId = findShipNetByShip(this.client, shipType, ownerNickname);
+    if (!shipNetRoomId) return;
+    await this.engine.unmonitorNet(shipNetRoomId);
+    // v1: stop monitoring only. Tombstone + leave is reserved for v1.5 behind
+    // an "auto-tombstone on destruction" settings toggle.
+    this.listeners.onShipNetClosed?.(shipNetRoomId);
+  }
+}
