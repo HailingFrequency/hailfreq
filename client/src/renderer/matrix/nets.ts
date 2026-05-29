@@ -140,6 +140,110 @@ export async function deleteNet(client: MatrixClient, matrixRoomId: string): Pro
   await client.leave(matrixRoomId);
 }
 
+// ---------------------------------------------------------------------------
+// Ship-net extensions
+// ---------------------------------------------------------------------------
+
+const SHIP_TYPE_EVENT = "org.hailfreq.ship.type";
+const SHIP_OWNER_RSI_EVENT = "org.hailfreq.ship.owner-rsi";
+const SHIP_OWNER_MATRIX_EVENT = "org.hailfreq.ship.owner-matrix-id";
+
+export interface ShipNetMetadata {
+  shipType: string;
+  ownerRsi: string;
+  ownerMatrixId: string;
+}
+
+/**
+ * Create a ship-net — a voice net tied to a specific ship and its owner.
+ * The room name follows the convention: `🚢 {shipType} — {ownerRsi}`.
+ * Returns the new room ID.
+ */
+export async function createShipNet(
+  client: MatrixClient,
+  ship: ShipNetMetadata,
+): Promise<string> {
+  const props: NetProperties = {
+    priority: 60,
+    name: `🚢 ${ship.shipType} — ${ship.ownerRsi}`,
+    color: "#22d3ee",
+  };
+  const create = await client.createRoom({
+    preset: "private_chat" as any,
+    name: props.name,
+    initial_state: [
+      {
+        type: "m.room.encryption",
+        state_key: "",
+        content: { algorithm: "m.megolm.v1.aes-sha2" },
+      },
+      {
+        type: NET_PRIORITY_EVENT,
+        state_key: "",
+        content: { value: props.priority },
+      },
+      {
+        type: NET_NAME_EVENT,
+        state_key: "",
+        content: { value: props.name },
+      },
+      {
+        type: NET_COLOR_EVENT,
+        state_key: "",
+        content: { value: props.color },
+      },
+      {
+        type: SHIP_TYPE_EVENT,
+        state_key: "",
+        content: { value: ship.shipType },
+      },
+      {
+        type: SHIP_OWNER_RSI_EVENT,
+        state_key: "",
+        content: { value: ship.ownerRsi },
+      },
+      {
+        type: SHIP_OWNER_MATRIX_EVENT,
+        state_key: "",
+        content: { value: ship.ownerMatrixId },
+      },
+    ],
+  });
+  return create.room_id;
+}
+
+/** Returns true if the given room has the ship-type state event (i.e. is a ship-net). */
+export function isShipNet(client: MatrixClient, matrixRoomId: string): boolean {
+  const room = client.getRoom(matrixRoomId);
+  if (!room) return false;
+  return !!room.currentState.getStateEvents(SHIP_TYPE_EVENT, "");
+}
+
+/**
+ * Find the room ID of a ship-net matching the given ship type and RSI owner handle.
+ * Returns null if no matching room is found.
+ */
+export function findShipNetByShip(
+  client: MatrixClient,
+  shipType: string,
+  ownerRsi: string,
+): string | null {
+  for (const room of client.getRooms()) {
+    const typeEv = room.currentState.getStateEvents(SHIP_TYPE_EVENT, "");
+    const ownerEv = room.currentState.getStateEvents(SHIP_OWNER_RSI_EVENT, "");
+    if (!typeEv || !ownerEv) continue;
+    if (
+      typeEv.getContent().value === shipType &&
+      ownerEv.getContent().value === ownerRsi
+    ) {
+      return room.roomId;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+
 /** Subscribe to net membership/property changes; returns unsubscribe function. */
 export function subscribeToNetsChanges(
   client: MatrixClient,
