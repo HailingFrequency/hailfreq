@@ -14,6 +14,7 @@ import {
   type CrewBoardingToastEntry,
 } from "../components/CrewBoardingToast";
 import type { VoiceEngine } from "../voice/VoiceEngine";
+import type { ShareEngine } from "../share/ShareEngine";
 
 /** Max toasts shown simultaneously. */
 const MAX_CREW_TOASTS = 3;
@@ -29,6 +30,11 @@ interface HomeProps {
    * "home" screen, but kept optional for safety).
    */
   voiceEngine?: VoiceEngine;
+  /**
+   * Shared ShareEngine for this server — created at AppState level alongside
+   * voiceEngine. Forwarded to NetListPanel for attachRoom/detachRoom calls.
+   */
+  shareEngine?: ShareEngine;
   onLogout: () => Promise<void> | void;
   serverEntry: ServerEntry;
   onTransmittingChange: (net: string | null) => void;
@@ -48,6 +54,7 @@ interface HomeProps {
 export function Home({
   client,
   voiceEngine,
+  shareEngine,
   onLogout,
   serverEntry,
   onTransmittingChange,
@@ -150,6 +157,7 @@ export function Home({
         <NetListPanel
           client={client}
           voiceEngine={voiceEngine}
+          shareEngine={shareEngine}
           serverEntry={serverEntry}
           onTransmittingChange={onTransmittingChange}
           focusedAppPtt={focusedAppPtt}

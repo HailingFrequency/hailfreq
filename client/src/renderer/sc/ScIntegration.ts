@@ -1,5 +1,6 @@
 import type { MatrixClient } from "matrix-js-sdk";
 import type { VoiceEngine } from "../voice/VoiceEngine";
+import type { ShareEngine } from "../share/ShareEngine";
 import { ScWatcher } from "./ScWatcher";
 import { createShipNet, findShipNetByShip } from "../matrix/nets";
 import { generateSframeKey, uploadSframeKey } from "../voice/sframeKeys";
@@ -22,6 +23,7 @@ export interface ScIntegrationEvents {
 export class ScIntegration {
   private readonly client: MatrixClient;
   private readonly engine: VoiceEngine;
+  private readonly shareEngine: ShareEngine | undefined;
   private serverEntry: ServerEntry;
   private watcher: ScWatcher | null = null;
   private listeners: ScIntegrationEvents = {};
@@ -32,10 +34,16 @@ export class ScIntegration {
     return `${shipType}::${owner}`;
   }
 
-  constructor(client: MatrixClient, engine: VoiceEngine, serverEntry: ServerEntry) {
+  constructor(
+    client: MatrixClient,
+    engine: VoiceEngine,
+    serverEntry: ServerEntry,
+    shareEngine?: ShareEngine,
+  ) {
     this.client = client;
     this.engine = engine;
     this.serverEntry = serverEntry;
+    this.shareEngine = shareEngine;
   }
 
   setServerEntry(entry: ServerEntry): void {
@@ -95,6 +103,7 @@ export class ScIntegration {
       try {
         const roomId = await creation;
         await this.engine.monitorNet({ matrixRoomId: roomId, priority: 60 });
+        this.shareEngine?.attachRoom(roomId);
       } finally {
         this.pendingShipNets.delete(key);
       }
@@ -155,6 +164,7 @@ export class ScIntegration {
       if (!ownerNickname) return;
       const shipNetRoomId = findShipNetByShip(this.client, shipType, ownerNickname);
       if (!shipNetRoomId) return;
+      this.shareEngine?.detachRoom(shipNetRoomId);
       await this.engine.unmonitorNet(shipNetRoomId);
       // v1: stop monitoring only. Tombstone + leave is reserved for v1.5 behind
       // an "auto-tombstone on destruction" settings toggle.

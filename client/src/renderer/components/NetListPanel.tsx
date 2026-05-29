@@ -6,6 +6,7 @@ import { listNets, subscribeToNetsChanges, type NetSummary } from "../matrix/net
 import { NetRow } from "./NetRow";
 import { VoiceEngine } from "../voice/VoiceEngine";
 import { PttController, type PttMode } from "../voice/PttController";
+import type { ShareEngine } from "../share/ShareEngine";
 
 
 interface NetListPanelProps {
@@ -18,6 +19,12 @@ interface NetListPanelProps {
    * If absent (legacy / test), a local engine is created as before.
    */
   voiceEngine?: VoiceEngine;
+  /**
+   * ShareEngine shared from AppState. When provided, NetListPanel calls
+   * attachRoom after monitorNet and detachRoom before unmonitorNet so the
+   * ShareEngine tracks screen-shares for all monitored nets.
+   */
+  shareEngine?: ShareEngine;
   serverEntry: ServerEntry;
   onTransmittingChange: (net: string | null) => void;
   /**
@@ -99,7 +106,7 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
   return prefs;
 }
 
-export function NetListPanel({ client, voiceEngine: externalEngine, serverEntry, onTransmittingChange, focusedAppPtt }: NetListPanelProps) {
+export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine, serverEntry, onTransmittingChange, focusedAppPtt }: NetListPanelProps) {
   const [nets, setNets] = useState<NetSummary[]>([]);
   const [uiState, setUiState] = useState<Map<string, PerNetUiState>>(new Map());
   // Use the shared engine from AppState when available; fall back to a local
@@ -232,6 +239,9 @@ export function NetListPanel({ client, voiceEngine: externalEngine, serverEntry,
   async function handleToggleMonitor(net: NetSummary) {
     const current = uiState.get(net.matrixRoomId) ?? defaultUi();
     if (current.monitored) {
+      // Detach ShareEngine BEFORE unmonitorNet — the LiveKit Room is still
+      // valid during disconnect, so listeners are cleanly removed.
+      shareEngine?.detachRoom(net.matrixRoomId);
       await engine.unmonitorNet(net.matrixRoomId);
       setUiState((m) => {
         const next = new Map(m);
@@ -246,10 +256,17 @@ export function NetListPanel({ client, voiceEngine: externalEngine, serverEntry,
         inbound: current.inboundChirp,
         outbound: current.outboundChirp,
       });
-      await engine.monitorNet({
-        matrixRoomId: net.matrixRoomId,
-        priority: net.properties.priority,
-      });
+      try {
+        await engine.monitorNet({
+          matrixRoomId: net.matrixRoomId,
+          priority: net.properties.priority,
+        });
+        // Attach ShareEngine AFTER monitorNet resolves so the LiveKit Room exists.
+        shareEngine?.attachRoom(net.matrixRoomId);
+      } catch (err) {
+        // monitorNet failed (e.g. LiveKit token error) — do not attach ShareEngine.
+        throw err;
+      }
       setUiState((m) => {
         const next = new Map(m);
         next.set(net.matrixRoomId, { ...current, monitored: true });

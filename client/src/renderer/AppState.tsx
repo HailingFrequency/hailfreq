@@ -22,6 +22,8 @@ import type { VerificationRequest } from "matrix-js-sdk/lib/crypto-api/verificat
 import type { CrewBoardingToastEntry } from "./components/CrewBoardingToast";
 import { VoiceEngine } from "./voice/VoiceEngine";
 import { ScIntegration } from "./sc/ScIntegration";
+import { ShareEngine } from "./share/ShareEngine";
+import type { ActiveShareSummary } from "./share/types";
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -36,6 +38,17 @@ interface ServerInstance {
    * scIntegrationsRef). Shut down when the server is removed or logged out.
    */
   voiceEngine?: VoiceEngine;
+  /**
+   * ShareEngine for this server. Created alongside voiceEngine; handles
+   * screen-share publish/subscribe across all monitored nets.
+   * Shut down when the server is removed or logged out.
+   */
+  shareEngine?: ShareEngine;
+  /**
+   * Mirrors ShareEngine's active remote shares into React state so the UI
+   * can react to share start/end without polling.
+   */
+  activeShares: ActiveShareSummary[];
   screen:
     | { kind: "loading" }
     | { kind: "login" }
@@ -111,7 +124,8 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
           homeserverUrl: stored.homeserverUrl,
         });
         const voiceEngine = new VoiceEngine(handle.client);
-        return { entry, handle, voiceEngine, screen: { kind: "home" }, unreadCount: 0, crewBoardingToasts: [] };
+        const shareEngine = new ShareEngine(voiceEngine);
+        return { entry, handle, voiceEngine, shareEngine, screen: { kind: "home" }, unreadCount: 0, crewBoardingToasts: [], activeShares: [] };
       }
     } catch {
       // Token expired, homeserver unreachable, or crypto init failed — fall through to login
@@ -119,7 +133,7 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
     // Clear stale/invalid credentials
     await window.hailfreq.invoke("tokens:clear", { serverId: entry.id });
   }
-  return { entry, screen: { kind: "login" }, unreadCount: 0, crewBoardingToasts: [] };
+  return { entry, screen: { kind: "login" }, unreadCount: 0, crewBoardingToasts: [], activeShares: [] };
 }
 
 async function validateAccessToken(homeserverUrl: string, accessToken: string): Promise<boolean> {
@@ -157,6 +171,41 @@ export function AppState() {
       for (const entry of settings.servers) {
         const instance = await initServer(entry);
         if (cancelled) return;
+        // Wire ShareEngine events so active shares mirror into React state.
+        // setState is stable across renders; the closures capture entry.id once.
+        const serverId = entry.id;
+        instance.shareEngine?.on({
+          onShareStarted: (share) => {
+            setState((prev) => {
+              const existing = prev.servers.get(serverId);
+              if (!existing) return prev;
+              return patchServer(prev, serverId, {
+                activeShares: [
+                  ...existing.activeShares.filter(
+                    (s) =>
+                      !(
+                        s.matrixRoomId === share.matrixRoomId &&
+                        s.sharerIdentity === share.sharerIdentity
+                      ),
+                  ),
+                  share,
+                ],
+              });
+            });
+          },
+          onShareEnded: (matrixRoomId, sharerIdentity) => {
+            setState((prev) => {
+              const existing = prev.servers.get(serverId);
+              if (!existing) return prev;
+              return patchServer(prev, serverId, {
+                activeShares: existing.activeShares.filter(
+                  (s) =>
+                    !(s.matrixRoomId === matrixRoomId && s.sharerIdentity === sharerIdentity),
+                ),
+              });
+            });
+          },
+        });
         servers.set(entry.id, instance);
       }
 
@@ -169,11 +218,12 @@ export function AppState() {
       setState({ servers, activeServerId, globalScreen, transmittingNet: null, scInstallPath: settings.scInstallPath, focusedAppPtt: settings.focusedAppPtt });
     })();
 
-    // Best-effort shutdown of all ClientHandles and VoiceEngines when the component unmounts.
+    // Best-effort shutdown of all resources when the component unmounts.
     return () => {
       cancelled = true;
       setState((s) => {
         s.servers.forEach((srv) => {
+          srv.shareEngine?.shutdown();
           void srv.handle?.shutdown().catch(() => undefined);
           void srv.voiceEngine?.shutdown().catch(() => undefined);
         });
@@ -329,6 +379,7 @@ export function AppState() {
   /**
    * Derive a stable list of signed-in clients that also have a VoiceEngine.
    * Only servers with both handle and voiceEngine are eligible for ScIntegration.
+   * ShareEngine is included (optional) so ScIntegration can attach/detach rooms.
    */
   const signedInWithEngine = useMemo(
     () =>
@@ -341,6 +392,7 @@ export function AppState() {
               instance.handle!.client,
               instance.voiceEngine!,
               instance.entry,
+              instance.shareEngine,
             ] as const,
         ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -394,7 +446,7 @@ export function AppState() {
     }
 
     // Start new integrations or update existing ones
-    for (const [serverId, client, engine, entry] of signedInWithEngine) {
+    for (const [serverId, client, engine, entry, shareEngine] of signedInWithEngine) {
       if (!desired.has(serverId)) continue;
 
       const existing = integrations.get(serverId);
@@ -403,7 +455,7 @@ export function AppState() {
         existing.setServerEntry(entry);
       } else {
         // Instantiate a new ScIntegration for this server
-        const integration = new ScIntegration(client, engine, entry);
+        const integration = new ScIntegration(client, engine, entry, shareEngine);
 
         integration.on({
           onCrewBoarded: (info) => {
@@ -536,11 +588,46 @@ export function AppState() {
 
         const handle = await startClient(creds);
         const voiceEngine = new VoiceEngine(handle.client);
+        const shareEngine = new ShareEngine(voiceEngine);
+        shareEngine.on({
+          onShareStarted: (share) => {
+            setState((prev) => {
+              const existing = prev.servers.get(serverId);
+              if (!existing) return prev;
+              return patchServer(prev, serverId, {
+                activeShares: [
+                  ...existing.activeShares.filter(
+                    (s) =>
+                      !(
+                        s.matrixRoomId === share.matrixRoomId &&
+                        s.sharerIdentity === share.sharerIdentity
+                      ),
+                  ),
+                  share,
+                ],
+              });
+            });
+          },
+          onShareEnded: (matrixRoomId, sharerIdentity) => {
+            setState((prev) => {
+              const existing = prev.servers.get(serverId);
+              if (!existing) return prev;
+              return patchServer(prev, serverId, {
+                activeShares: existing.activeShares.filter(
+                  (s) =>
+                    !(s.matrixRoomId === matrixRoomId && s.sharerIdentity === sharerIdentity),
+                ),
+              });
+            });
+          },
+        });
 
         setState((s) =>
           patchServer(s, serverId, {
             handle,
             voiceEngine,
+            shareEngine,
+            activeShares: [],
             entry: {
               ...s.servers.get(serverId)!.entry,
               userId: creds.userId,
@@ -596,8 +683,14 @@ export function AppState() {
   );
 
   const makeLogoutHandler = useCallback(
-    (serverId: string, handle: ClientHandle | undefined, voiceEngine: VoiceEngine | undefined) =>
+    (
+      serverId: string,
+      handle: ClientHandle | undefined,
+      voiceEngine: VoiceEngine | undefined,
+      shareEngine: ShareEngine | undefined,
+    ) =>
       async () => {
+        shareEngine?.shutdown();
         await handle?.shutdown();
         await voiceEngine?.shutdown().catch(() => undefined);
         await window.hailfreq.invoke("tokens:clear", { serverId });
@@ -609,6 +702,8 @@ export function AppState() {
           patchServer(s, serverId, {
             handle: undefined,
             voiceEngine: undefined,
+            shareEngine: undefined,
+            activeShares: [],
             entry: {
               ...s.servers.get(serverId)!.entry,
               userId: "",
@@ -636,7 +731,8 @@ export function AppState() {
         scIntegrationsRef.current.delete(serverId);
       }
 
-      // Shutdown the client, voice engine, clear tokens, and call servers:remove
+      // Teardown order (reverse of creation): shareEngine → voiceEngine → handle
+      instance.shareEngine?.shutdown();
       await instance.handle?.shutdown();
       await instance.voiceEngine?.shutdown().catch(() => undefined);
       await window.hailfreq.invoke("tokens:clear", { serverId });
@@ -898,7 +994,7 @@ export function AppState() {
             onEncryptionDone={makeEncryptionDoneHandler(activeInstance.entry.id)}
             onNeedsExistingRecovery={makeNeedsExistingRecoveryHandler(activeInstance.entry.id)}
             onRestored={makeRestoredHandler(activeInstance.entry.id)}
-            onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle, activeInstance.voiceEngine)}
+            onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle, activeInstance.voiceEngine, activeInstance.shareEngine)}
             onVerificationDone={makeVerificationDoneHandler(activeInstance.entry.id)}
             onVerificationMethodChosen={makeVerificationMethodChosenHandler(activeInstance.entry.id)}
             onTransmittingChange={handleTransmittingChange}
@@ -947,7 +1043,7 @@ function ActiveServerView({
   onAddToAllowlist,
   focusedAppPtt,
 }: ActiveServerViewProps) {
-  const { screen, entry, handle, voiceEngine, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
+  const { screen, entry, handle, voiceEngine, shareEngine, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
 
   // Expose the Matrix ClientHandle for Plan 6+ E2E tests when running under HAILFREQ_TEST=1.
   // Mirrors the window.__voiceEngine pattern in NetListPanel.
@@ -1047,6 +1143,7 @@ function ActiveServerView({
         <Home
           client={handle!.client}
           voiceEngine={voiceEngine}
+          shareEngine={shareEngine}
           onLogout={onLogout}
           serverEntry={entry}
           onTransmittingChange={onTransmittingChange}
