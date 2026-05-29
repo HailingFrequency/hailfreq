@@ -1,7 +1,7 @@
 .PHONY: setup up down logs test healthcheck clean
 
 setup:
-	./scripts/setup.sh
+	docker compose pull
 
 up:
 	docker compose up -d
@@ -22,5 +22,4 @@ test:
 
 clean:
 	docker compose down -v
-	rm -f synapse/homeserver.yaml synapse/log.config.rendered Caddyfile livekit/livekit.yaml coturn/turnserver.conf
 	rm -rf tests/.venv

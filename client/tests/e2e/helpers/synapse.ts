@@ -12,9 +12,13 @@
  * This design avoids all name/config collisions when running two instances for
  * the multi-server E2E test.
  *
+ * NOTE: All service configs are inlined here (not read from the server kit's
+ * template files) because the production kit embeds them inside compose.yml
+ * as `configs:` blocks. These strings must stay in sync with the compose.yml
+ * configs in server/compose.yml.
+ *
  * Requirements:
  *   - podman + podman-compose available in PATH
- *   - Server directory at ../../../../server relative to this file
  */
 
 import { execSync } from "node:child_process";
@@ -23,13 +27,189 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
 
-// __dirname is not available in ES modules; derive it from import.meta.url
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// ---------------------------------------------------------------------------
+// Inlined service configs (source of truth: server/compose.yml configs: blocks)
+// ---------------------------------------------------------------------------
 
-const SERVER_DIR = path.resolve(__dirname, "../../../../server");
+/** Synapse log.config — matches synapse_log_config in server/compose.yml */
+const SYNAPSE_LOG_CONFIG = `\
+version: 1
+
+formatters:
+  precise:
+    format: '%(asctime)s - %(name)s - %(lineno)d - %(levelname)s - %(request)s - %(message)s'
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: precise
+
+loggers:
+  synapse.storage.SQL:
+    level: INFO
+
+root:
+  level: INFO
+  handlers: [console]
+
+disable_existing_loggers: false
+`;
+
+/** init-db.sh — matches postgres_init_db in server/compose.yml */
+const POSTGRES_INIT_DB_SH = `\
+#!/usr/bin/env bash
+set -euo pipefail
+
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+  CREATE DATABASE synapse
+    ENCODING 'UTF8'
+    LC_COLLATE='C'
+    LC_CTYPE='C'
+    TEMPLATE=template0
+    OWNER synapse;
+EOSQL
+`;
+
+/**
+ * homeserver.yaml template — matches synapse_homeserver_yaml_template in server/compose.yml.
+ * Variables: HAILFREQ_DOMAIN, HAILFREQ_SERVER_HOSTNAME, POSTGRES_PASSWORD,
+ * SYNAPSE_REGISTRATION_SHARED_SECRET, SYNAPSE_MACAROON_SECRET, SYNAPSE_FORM_SECRET,
+ * TURN_SHARED_SECRET.
+ * Note: compose.yml uses $${VAR} for shell-literal passthrough; tests use ${VAR} directly.
+ */
+const HOMESERVER_YAML_TEMPLATE = `\
+# Hailfreq Synapse homeserver config
+# Generated from homeserver.yaml.template — do not edit directly; edit the template.
+
+server_name: "\${HAILFREQ_DOMAIN}"
+public_baseurl: "https://\${HAILFREQ_SERVER_HOSTNAME}/"
+pid_file: /data/homeserver.pid
+web_client_location: ""
+serve_server_wellknown: true
+
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    bind_addresses: ['0.0.0.0']
+    resources:
+      - names: [client, federation]
+        compress: true
+
+database:
+  name: psycopg2
+  args:
+    user: synapse
+    password: \${POSTGRES_PASSWORD}
+    database: synapse
+    host: postgres
+    port: 5432
+    cp_min: 5
+    cp_max: 10
+
+log_config: "/data/log.config"
+
+media_store_path: /data/media_store
+max_upload_size: 50M
+max_image_pixels: 32M
+
+enable_registration: false
+registration_requires_token: true
+
+federation_domain_whitelist: []
+allow_public_rooms_over_federation: false
+
+allow_public_rooms_without_auth: false
+
+encryption_enabled_by_default_for_room_type: invite
+
+retention:
+  enabled: true
+  default_policy:
+    min_lifetime: 1d
+    max_lifetime: 90d
+
+registration_shared_secret: "\${SYNAPSE_REGISTRATION_SHARED_SECRET}"
+macaroon_secret_key: "\${SYNAPSE_MACAROON_SECRET}"
+form_secret: "\${SYNAPSE_FORM_SECRET}"
+signing_key_path: "/data/signing.key"
+
+trusted_key_servers: []
+suppress_key_server_warning: true
+
+oidc_providers:
+  []
+
+url_preview_enabled: false
+
+report_stats: false
+
+rc_message:
+  per_second: 0.5
+  burst_count: 10
+
+rc_registration:
+  per_second: 0.17
+  burst_count: 3
+
+rc_login:
+  address:
+    per_second: 0.17
+    burst_count: 3
+  account:
+    per_second: 0.17
+    burst_count: 3
+  failed_attempts:
+    per_second: 0.17
+    burst_count: 3
+
+turn_uris:
+  - "turn:\${HAILFREQ_SERVER_HOSTNAME}:3478?transport=udp"
+  - "turn:\${HAILFREQ_SERVER_HOSTNAME}:3478?transport=tcp"
+  - "turns:\${HAILFREQ_SERVER_HOSTNAME}:5349?transport=tcp"
+turn_shared_secret: "\${TURN_SHARED_SECRET}"
+turn_user_lifetime: 86400000
+turn_allow_guests: false
+`;
+
+/**
+ * LiveKit yaml template — matches livekit_yaml in server/compose.yml.
+ * Variables: LIVEKIT_API_KEY, LIVEKIT_API_SECRET, HAILFREQ_PUBLIC_IP.
+ */
+const LIVEKIT_YAML_TEMPLATE = `\
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: true
+  node_ip: "\${HAILFREQ_PUBLIC_IP}"
+
+keys:
+  \${LIVEKIT_API_KEY}: \${LIVEKIT_API_SECRET}
+
+turn:
+  enabled: false
+
+logging:
+  level: info
+  sample: false
+
+redis: {}
+
+room:
+  enable_remote_unmute: false
+  auto_create: true
+
+webhook:
+  api_key: \${LIVEKIT_API_KEY}
+  urls: []
+`;
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -62,7 +242,7 @@ export async function startSynapseInstance(
 
   // ------------------------------------------------------------------
   // 1. Create a per-instance temp directory
-  //    Contains: compose.yml, homeserver.yaml, .env, log.config, init-db.sh
+  //    Contains: compose.yml, homeserver.yaml, log.config, init-db.sh
   // ------------------------------------------------------------------
   const instanceDir = fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`));
   const synapseDir = path.join(instanceDir, "synapse");
@@ -78,34 +258,24 @@ export async function startSynapseInstance(
 
   // ------------------------------------------------------------------
   // 3. Render homeserver.yaml into the instance's synapse/ dir
+  //    Uses the inlined HOMESERVER_YAML_TEMPLATE constant (source of truth:
+  //    synapse_homeserver_yaml_template in server/compose.yml)
   // ------------------------------------------------------------------
-  const homeserverTemplate = fs.readFileSync(
-    path.join(SERVER_DIR, "synapse/homeserver.yaml.template"),
-    "utf8",
-  );
-
-  const homeserverYaml = homeserverTemplate
+  const homeserverYaml = HOMESERVER_YAML_TEMPLATE
     .replace(/\${HAILFREQ_DOMAIN}/g, "localhost")
+    .replace(/\${HAILFREQ_SERVER_HOSTNAME}/g, "localhost")
     .replace(/\${POSTGRES_PASSWORD}/g, postgresPassword)
     .replace(/\${SYNAPSE_REGISTRATION_SHARED_SECRET}/g, sharedSecret)
     .replace(/\${SYNAPSE_MACAROON_SECRET}/g, macaroonSecret)
     .replace(/\${SYNAPSE_FORM_SECRET}/g, formSecret)
-    .replace(/\${OIDC_PROVIDERS_BLOCK}/g, "  []")
-    // TURN not needed for E2E; replace the TURN URI template references
-    .replace(/\${HAILFREQ_DOMAIN}:[^\n]*/g, "localhost:3478")
+    // TURN not needed for E2E
     .replace(/\${TURN_SHARED_SECRET}/g, "placeholder");
 
   fs.writeFileSync(path.join(synapseDir, "homeserver.yaml"), homeserverYaml);
 
-  // Copy log.config and init-db.sh (these are static)
-  fs.copyFileSync(
-    path.join(SERVER_DIR, "synapse/log.config"),
-    path.join(synapseDir, "log.config"),
-  );
-  fs.copyFileSync(
-    path.join(SERVER_DIR, "synapse/init-db.sh"),
-    path.join(synapseDir, "init-db.sh"),
-  );
+  // Write log.config and init-db.sh from inlined constants
+  fs.writeFileSync(path.join(synapseDir, "log.config"), SYNAPSE_LOG_CONFIG);
+  fs.writeFileSync(path.join(synapseDir, "init-db.sh"), POSTGRES_INIT_DB_SH);
   fs.chmodSync(path.join(synapseDir, "init-db.sh"), 0o755);
 
   // ------------------------------------------------------------------
@@ -380,52 +550,40 @@ export async function startFullStackInstance(
 
   // ------------------------------------------------------------------
   // 3. Render homeserver.yaml
+  //    Uses the inlined HOMESERVER_YAML_TEMPLATE constant (source of truth:
+  //    synapse_homeserver_yaml_template in server/compose.yml)
   // ------------------------------------------------------------------
-  const homeserverTemplate = fs.readFileSync(
-    path.join(SERVER_DIR, "synapse/homeserver.yaml.template"),
-    "utf8",
-  );
-
-  const homeserverYaml = homeserverTemplate
+  const homeserverYaml = HOMESERVER_YAML_TEMPLATE
     .replace(/\${HAILFREQ_DOMAIN}/g, "localhost")
+    .replace(/\${HAILFREQ_SERVER_HOSTNAME}/g, "localhost")
     .replace(/\${POSTGRES_PASSWORD}/g, postgresPassword)
     .replace(/\${SYNAPSE_REGISTRATION_SHARED_SECRET}/g, sharedSecret)
     .replace(/\${SYNAPSE_MACAROON_SECRET}/g, macaroonSecret)
     .replace(/\${SYNAPSE_FORM_SECRET}/g, formSecret)
-    .replace(/\${OIDC_PROVIDERS_BLOCK}/g, "  []")
-    .replace(/\${HAILFREQ_DOMAIN}:[^\n]*/g, "localhost:3478")
     .replace(/\${TURN_SHARED_SECRET}/g, turnSecret);
 
   fs.writeFileSync(path.join(synapseDir, "homeserver.yaml"), homeserverYaml);
-  fs.copyFileSync(
-    path.join(SERVER_DIR, "synapse/log.config"),
-    path.join(synapseDir, "log.config"),
-  );
-  fs.copyFileSync(
-    path.join(SERVER_DIR, "synapse/init-db.sh"),
-    path.join(synapseDir, "init-db.sh"),
-  );
+
+  // Write log.config and init-db.sh from inlined constants
+  fs.writeFileSync(path.join(synapseDir, "log.config"), SYNAPSE_LOG_CONFIG);
+  fs.writeFileSync(path.join(synapseDir, "init-db.sh"), POSTGRES_INIT_DB_SH);
   fs.chmodSync(path.join(synapseDir, "init-db.sh"), 0o755);
 
   // ------------------------------------------------------------------
   // 4. Render livekit.yaml
+  //    Uses the inlined LIVEKIT_YAML_TEMPLATE constant (source of truth:
+  //    livekit_yaml in server/compose.yml)
   // ------------------------------------------------------------------
-  const liveKitTemplate = fs.readFileSync(
-    path.join(SERVER_DIR, "livekit/livekit.yaml.template"),
-    "utf8",
-  );
-  const liveKitYaml = liveKitTemplate
+  const liveKitYaml = LIVEKIT_YAML_TEMPLATE
     .replace(/\${LIVEKIT_API_KEY}/g, liveKitApiKey)
     .replace(/\${LIVEKIT_API_SECRET}/g, liveKitApiSecret)
     .replace(/\${HAILFREQ_PUBLIC_IP}/g, "127.0.0.1")
     // Use a small port range to avoid collisions with host services
-    .replace(/port_range_start: \d+/, "port_range_start: 50200")
-    .replace(/port_range_end: \d+/, "port_range_end: 50299")
+    .replace(/port_range_start: 50000/, "port_range_start: 50200")
+    .replace(/port_range_end: 50100/, "port_range_end: 50299")
     // Disable external IP usage for loopback testing
     .replace(/use_external_ip: true/, "use_external_ip: false")
-    .replace(/node_ip:.*/, "node_ip: \"127.0.0.1\"")
-    // Disable TURN (coturn) for simplicity in loopback tests
-    .replace(/turn:\n\s+enabled: false/, "turn:\n  enabled: false");
+    .replace(/node_ip: "127\.0\.0\.1"/, "node_ip: \"127.0.0.1\"");
   fs.writeFileSync(path.join(liveKitDir, "livekit.yaml"), liveKitYaml);
 
   // ------------------------------------------------------------------

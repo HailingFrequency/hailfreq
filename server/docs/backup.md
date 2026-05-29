@@ -8,7 +8,8 @@ The minimum thing to back up: the Postgres `synapse` database and the `.env` fil
 |-------------------------------|-----------------------------------------|----------------|
 | `postgres_data` volume        | All Synapse state — users, rooms, messages, keys | Daily         |
 | `synapse_data/signing.key`    | Server identity — replacing it invalidates federation and OIDC trust | Once, retain forever |
-| `.env` file                   | Secrets — can't be regenerated without re-keying everything | On every change |
+| `hailfreq-secrets` volume     | Auto-generated secrets (Postgres password, Synapse keys, LiveKit API key/secret, TURN shared secret) — losing this forces a full re-key | Once, retain forever |
+| `.env` file                   | Your 4 deployment variables — without it you cannot recreate the stack | On every change |
 | `caddy_data/` volume          | Let's Encrypt certs — regenerable but causes rate-limit pain if lost | Weekly        |
 
 You do NOT need to back up `livekit_data` or `coturn`'s state — both are stateless across restarts.

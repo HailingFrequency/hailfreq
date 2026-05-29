@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [[ ! -f .env ]]; then
-  echo "Error: .env not found. Run ./scripts/setup.sh first."
+  echo "Error: .env not found. Create one with HAILFREQ_DOMAIN, HAILFREQ_SERVER_HOSTNAME, HAILFREQ_ADMIN_EMAIL, HAILFREQ_PUBLIC_IP."
   exit 2
 fi
 

@@ -6,7 +6,7 @@
 
 Common causes:
 
-- **Missing variables in `.env`.** Re-run `./scripts/setup.sh` — it validates required vars.
+- **Missing variables in `.env`.** Check that all four required vars (`HAILFREQ_DOMAIN`, `HAILFREQ_SERVER_HOSTNAME`, `HAILFREQ_ADMIN_EMAIL`, `HAILFREQ_PUBLIC_IP`) are set.
 - **Port conflicts.** Run `sudo lsof -i :80 -i :443 -i :3478 -i :5349 -i :7881 -i :50000` to find conflicts.
 - **Docker not running.** `sudo systemctl status docker`.
 

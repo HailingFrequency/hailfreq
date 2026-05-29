@@ -21,12 +21,13 @@ CITIZENID_CLIENT_ID=<your client id>
 CITIZENID_CLIENT_SECRET=<your client secret>
 ```
 
-Then re-run setup and restart:
+Then restart the stack:
 
 ```bash
-./scripts/setup.sh "$HAILFREQ_DOMAIN" "$HAILFREQ_ADMIN_EMAIL"
 docker compose up -d
 ```
+
+Synapse reads `CITIZENID_CLIENT_ID` and `CITIZENID_CLIENT_SECRET` from `.env` at startup via the `livekit_yaml` entrypoint substitution. No additional steps required.
 
 ## 3. Test the login flow
 
@@ -38,16 +39,16 @@ docker compose up -d
 
 ## 4. (Optional) Restrict signups to RSI-verified accounts only
 
-The default `attribute_requirements` in `synapse/oidc-citizenid.yaml.snippet` requires the `CitizenId.AccountType.Citizen` role. To require RSI-verified accounts only, change the value to `CitizenId.Status.Verified`.
+The `oidc_providers` block is inlined in `server/compose.yml` under the `synapse_homeserver_yaml_template` config. The default `attribute_requirements` uses `CitizenId.AccountType.Citizen`. To require RSI-verified accounts only, edit the template in `compose.yml` and change the value to `CitizenId.Status.Verified`, then `docker compose up -d`.
 
-To allow ANY CitizenID user (no role gating), comment out the entire `attribute_requirements` block.
+To allow ANY CitizenID user (no role gating), comment out the entire `attribute_requirements` block in the template.
 
 ## 5. Disabling CitizenID
 
-To run with local-account login only, leave `CITIZENID_CLIENT_ID` and `CITIZENID_CLIENT_SECRET` empty in `.env`. The setup script will render an empty `oidc_providers: []` and Synapse will skip OIDC initialization.
+To run with local-account login only, leave `CITIZENID_CLIENT_ID` and `CITIZENID_CLIENT_SECRET` empty in `.env` (or unset). The `oidc_providers` block defaults to `[]` and Synapse will skip OIDC initialization.
 
 ## Troubleshooting
 
-- **"OIDC provider citizenid not configured"** — check that `CITIZENID_CLIENT_ID` and `CITIZENID_CLIENT_SECRET` are non-empty in `.env` and that you re-ran `./scripts/setup.sh`.
+- **"OIDC provider citizenid not configured"** — check that `CITIZENID_CLIENT_ID` and `CITIZENID_CLIENT_SECRET` are non-empty in `.env` and restart with `docker compose up -d`.
 - **"invalid redirect_uri"** — the redirect URI configured in CitizenID must exactly match `https://YOUR_HAILFREQ_DOMAIN/_synapse/client/oidc/callback` including the trailing slash convention.
 - **OIDC discovery fails** — check that your server can reach `https://citizenid.space/.well-known/openid-configuration` from inside the Synapse container: `docker compose exec synapse curl -fSs https://citizenid.space/.well-known/openid-configuration`.
