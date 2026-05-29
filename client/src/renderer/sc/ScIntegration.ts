@@ -12,6 +12,8 @@ export interface ScIntegrationEvents {
     rsiHandle: string;
     matrixUserId: string | null;
     shipNetRoomId: string;
+    /** The ship type (e.g. "Carrack", "Pisces") the crew member boarded. */
+    shipType: string;
   }) => void;
   onShipNetCreated?: (matrixRoomId: string) => void;
   onShipNetClosed?: (matrixRoomId: string) => void;
@@ -113,6 +115,7 @@ export class ScIntegration {
         rsiHandle: crewNickname,
         matrixUserId,
         shipNetRoomId,
+        shipType,
       });
 
       const allowed = this.serverEntry.scIntegration?.autoInviteAllowlist

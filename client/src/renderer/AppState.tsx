@@ -20,6 +20,8 @@ import { Home } from "./screens/Home";
 import type { Credentials } from "./matrix/types";
 import type { VerificationRequest } from "matrix-js-sdk/lib/crypto-api/verification";
 import type { CrewBoardingToastEntry } from "./components/CrewBoardingToast";
+import { VoiceEngine } from "./voice/VoiceEngine";
+import { ScIntegration } from "./sc/ScIntegration";
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -28,6 +30,12 @@ import type { CrewBoardingToastEntry } from "./components/CrewBoardingToast";
 interface ServerInstance {
   entry: ServerEntry;
   handle?: ClientHandle;
+  /**
+   * VoiceEngine for this server. Created alongside handle; shared with
+   * NetListPanel (passed as a prop) and ScIntegration (stored separately in
+   * scIntegrationsRef). Shut down when the server is removed or logged out.
+   */
+  voiceEngine?: VoiceEngine;
   screen:
     | { kind: "loading" }
     | { kind: "login" }
@@ -100,7 +108,8 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
           deviceId: stored.deviceId,
           homeserverUrl: stored.homeserverUrl,
         });
-        return { entry, handle, screen: { kind: "home" }, unreadCount: 0, crewBoardingToasts: [] };
+        const voiceEngine = new VoiceEngine(handle.client);
+        return { entry, handle, voiceEngine, screen: { kind: "home" }, unreadCount: 0, crewBoardingToasts: [] };
       }
     } catch {
       // Token expired, homeserver unreachable, or crypto init failed — fall through to login
@@ -158,12 +167,13 @@ export function AppState() {
       setState({ servers, activeServerId, globalScreen, transmittingNet: null, scInstallPath: settings.scInstallPath });
     })();
 
-    // Best-effort shutdown of all ClientHandles when the component unmounts.
+    // Best-effort shutdown of all ClientHandles and VoiceEngines when the component unmounts.
     return () => {
       cancelled = true;
       setState((s) => {
         s.servers.forEach((srv) => {
           void srv.handle?.shutdown().catch(() => undefined);
+          void srv.voiceEngine?.shutdown().catch(() => undefined);
         });
         return s;
       });
@@ -305,6 +315,127 @@ export function AppState() {
   }, [signedInClients]);
 
   // -------------------------------------------------------------------------
+  // Per-server ScIntegration lifecycle
+  // -------------------------------------------------------------------------
+
+  /**
+   * Ref Map of live ScIntegration instances, keyed by serverId.
+   * Not React state — mutations here don't trigger re-renders.
+   */
+  const scIntegrationsRef = useRef<Map<string, ScIntegration>>(new Map());
+
+  /**
+   * Derive a stable list of signed-in clients that also have a VoiceEngine.
+   * Only servers with both handle and voiceEngine are eligible for ScIntegration.
+   */
+  const signedInWithEngine = useMemo(
+    () =>
+      Array.from(state.servers.entries())
+        .filter(([, instance]) => instance.handle != null && instance.voiceEngine != null)
+        .map(
+          ([serverId, instance]) =>
+            [
+              serverId,
+              instance.handle!.client,
+              instance.voiceEngine!,
+              instance.entry,
+            ] as const,
+        ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.servers],
+  );
+
+  useEffect(() => {
+    const scPath = state.scInstallPath;
+    const integrations = scIntegrationsRef.current;
+
+    // Determine which servers should have an active ScIntegration
+    const desired = new Set<string>();
+    for (const [serverId, , , entry] of signedInWithEngine) {
+      if (entry.scIntegration?.enabled && scPath) {
+        desired.add(serverId);
+      }
+    }
+
+    // Stop and remove integrations for servers no longer eligible
+    for (const [serverId, integration] of integrations) {
+      if (!desired.has(serverId)) {
+        void integration.stop().catch((err: unknown) => {
+          console.error(`[AppState] ScIntegration stop failed for ${serverId}:`, err);
+        });
+        integrations.delete(serverId);
+      }
+    }
+
+    // Start new integrations or update existing ones
+    for (const [serverId, client, engine, entry] of signedInWithEngine) {
+      if (!desired.has(serverId)) continue;
+
+      const existing = integrations.get(serverId);
+      if (existing) {
+        // Update the server entry in-memory (e.g. allowlist changed)
+        existing.setServerEntry(entry);
+      } else {
+        // Instantiate a new ScIntegration for this server
+        const integration = new ScIntegration(client, engine, entry);
+
+        integration.on({
+          onCrewBoarded: (info) => {
+            setState((prev) => {
+              const srv = prev.servers.get(serverId);
+              if (!srv) return prev;
+              const newToast: CrewBoardingToastEntry = {
+                id: crypto.randomUUID(),
+                rsiHandle: info.rsiHandle,
+                matrixUserId: info.matrixUserId,
+                shipNetRoomId: info.shipNetRoomId,
+                shipType: info.shipType,
+                expiresAt: Date.now() + 30_000,
+              };
+              // Enforce max-3: drop oldest (first element) if already at cap
+              const existing = srv.crewBoardingToasts;
+              const next =
+                existing.length >= 3
+                  ? [...existing.slice(1), newToast]
+                  : [...existing, newToast];
+              return patchServer(prev, serverId, { crewBoardingToasts: next });
+            });
+          },
+          onShipNetCreated: (matrixRoomId) => {
+            console.log(`[AppState] ship-net created: ${matrixRoomId} (server: ${serverId})`);
+          },
+          onShipNetClosed: (matrixRoomId) => {
+            console.log(`[AppState] ship-net closed: ${matrixRoomId} (server: ${serverId})`);
+          },
+        });
+
+        integrations.set(serverId, integration);
+
+        // Start the watcher; catch errors so a bad path doesn't crash the app
+        void integration.start(scPath!).catch((err: unknown) => {
+          console.error(
+            `[AppState] ScIntegration.start failed for ${serverId} (path: ${scPath}):`,
+            err,
+          );
+          integrations.delete(serverId);
+        });
+      }
+    }
+
+    // Cleanup: stop all integrations when this effect tears down
+    return () => {
+      for (const [serverId, integration] of integrations) {
+        void integration.stop().catch((err: unknown) => {
+          console.error(`[AppState] ScIntegration stop (cleanup) failed for ${serverId}:`, err);
+        });
+      }
+      integrations.clear();
+    };
+    // Re-run when signed-in servers, their entries, or the SC path changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedInWithEngine, state.scInstallPath]);
+
+  // -------------------------------------------------------------------------
   // Callbacks
   // -------------------------------------------------------------------------
 
@@ -378,10 +509,12 @@ export function AppState() {
         });
 
         const handle = await startClient(creds);
+        const voiceEngine = new VoiceEngine(handle.client);
 
         setState((s) =>
           patchServer(s, serverId, {
             handle,
+            voiceEngine,
             entry: {
               ...s.servers.get(serverId)!.entry,
               userId: creds.userId,
@@ -437,9 +570,10 @@ export function AppState() {
   );
 
   const makeLogoutHandler = useCallback(
-    (serverId: string, handle: ClientHandle | undefined) =>
+    (serverId: string, handle: ClientHandle | undefined, voiceEngine: VoiceEngine | undefined) =>
       async () => {
         await handle?.shutdown();
+        await voiceEngine?.shutdown().catch(() => undefined);
         await window.hailfreq.invoke("tokens:clear", { serverId });
         await window.hailfreq.invoke("servers:update", {
           serverId,
@@ -448,6 +582,7 @@ export function AppState() {
         setState((s) =>
           patchServer(s, serverId, {
             handle: undefined,
+            voiceEngine: undefined,
             entry: {
               ...s.servers.get(serverId)!.entry,
               userId: "",
@@ -465,8 +600,9 @@ export function AppState() {
       const instance = state.servers.get(serverId);
       if (!instance) return;
 
-      // Shutdown the client, clear tokens, and call servers:remove
+      // Shutdown the client, voice engine, clear tokens, and call servers:remove
       await instance.handle?.shutdown();
+      await instance.voiceEngine?.shutdown().catch(() => undefined);
       await window.hailfreq.invoke("tokens:clear", { serverId });
       await window.hailfreq.invoke("servers:remove", { serverId });
 
@@ -529,7 +665,6 @@ export function AppState() {
    * Dismiss a single crew-boarding toast by id for a given server.
    * Called by Home when the user picks Invite / Always-invite / Ignore,
    * or when the auto-dismiss timer fires.
-   * Task 11 will add the producer side (pushing toasts into this queue).
    */
   const makeDismissCrewBoardingToast = useCallback(
     (serverId: string) => (toastId: string) => {
@@ -539,6 +674,61 @@ export function AppState() {
         return patchServer(s, serverId, {
           crewBoardingToasts: existing.crewBoardingToasts.filter((t) => t.id !== toastId),
         });
+      });
+    },
+    [],
+  );
+
+  /**
+   * Add an RSI handle to a server's SC integration allowlist.
+   * - Persists via IPC (servers:update)
+   * - Patches local React state (for consistency)
+   * - Updates the live ScIntegration instance immediately (no render cycle needed)
+   */
+  const makeAddToAllowlist = useCallback(
+    (serverId: string) => async (rsiHandle: string) => {
+      const trimmed = rsiHandle.trim();
+      if (!trimmed) return;
+
+      setState((prev) => {
+        const srv = prev.servers.get(serverId);
+        if (!srv) return prev;
+
+        const current = srv.entry.scIntegration ?? {
+          enabled: false,
+          autoInviteAllowlist: [],
+          autoCloseOnDestruction: true,
+        };
+
+        // Case-insensitive dedupe
+        const alreadyPresent = current.autoInviteAllowlist.some(
+          (h) => h.toLowerCase() === trimmed.toLowerCase(),
+        );
+        if (alreadyPresent) return prev;
+
+        const updatedIntegration = {
+          ...current,
+          autoInviteAllowlist: [...current.autoInviteAllowlist, trimmed],
+        };
+        const updatedEntry: ServerEntry = {
+          ...srv.entry,
+          scIntegration: updatedIntegration,
+        };
+
+        // Update the live ScIntegration instance so it takes effect immediately
+        scIntegrationsRef.current.get(serverId)?.setServerEntry(updatedEntry);
+
+        // Fire-and-forget IPC persist
+        void window.hailfreq
+          .invoke("servers:update", {
+            serverId,
+            patch: { scIntegration: updatedIntegration },
+          })
+          .catch((err: unknown) => {
+            console.error("[AppState] onAddToAllowlist persist failed:", err);
+          });
+
+        return patchServer(prev, serverId, { entry: updatedEntry });
       });
     },
     [],
@@ -665,11 +855,12 @@ export function AppState() {
             onEncryptionDone={makeEncryptionDoneHandler(activeInstance.entry.id)}
             onNeedsExistingRecovery={makeNeedsExistingRecoveryHandler(activeInstance.entry.id)}
             onRestored={makeRestoredHandler(activeInstance.entry.id)}
-            onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle)}
+            onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle, activeInstance.voiceEngine)}
             onVerificationDone={makeVerificationDoneHandler(activeInstance.entry.id)}
             onVerificationMethodChosen={makeVerificationMethodChosenHandler(activeInstance.entry.id)}
             onTransmittingChange={handleTransmittingChange}
             onDismissCrewBoardingToast={makeDismissCrewBoardingToast(activeInstance.entry.id)}
+            onAddToAllowlist={makeAddToAllowlist(activeInstance.entry.id)}
           />
         ) : (
           <Centered>No server selected.</Centered>
@@ -694,6 +885,7 @@ interface ActiveServerViewProps {
   onVerificationMethodChosen: (method: VerificationMethodChoice) => void;
   onTransmittingChange: (net: string | null) => void;
   onDismissCrewBoardingToast: (toastId: string) => void;
+  onAddToAllowlist: (rsiHandle: string) => Promise<void>;
 }
 
 function ActiveServerView({
@@ -707,8 +899,9 @@ function ActiveServerView({
   onVerificationMethodChosen,
   onTransmittingChange,
   onDismissCrewBoardingToast,
+  onAddToAllowlist,
 }: ActiveServerViewProps) {
-  const { screen, entry, handle, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
+  const { screen, entry, handle, voiceEngine, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
 
   // Expose the Matrix ClientHandle for Plan 6+ E2E tests when running under HAILFREQ_TEST=1.
   // Mirrors the window.__voiceEngine pattern in NetListPanel.
@@ -807,11 +1000,13 @@ function ActiveServerView({
       return (
         <Home
           client={handle!.client}
+          voiceEngine={voiceEngine}
           onLogout={onLogout}
           serverEntry={entry}
           onTransmittingChange={onTransmittingChange}
           crewBoardingToasts={crewBoardingToasts}
           onDismissCrewBoardingToast={onDismissCrewBoardingToast}
+          onAddToAllowlist={onAddToAllowlist}
         />
       );
 

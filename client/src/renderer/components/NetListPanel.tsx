@@ -7,8 +7,17 @@ import { NetRow } from "./NetRow";
 import { VoiceEngine } from "../voice/VoiceEngine";
 import { PttController, type PttMode } from "../voice/PttController";
 
+
 interface NetListPanelProps {
   client: MatrixClient;
+  /**
+   * VoiceEngine shared from AppState. When provided, NetListPanel uses this
+   * instance instead of creating its own, so that ScIntegration (which also
+   * holds a reference to the same engine) can share the same audio context and
+   * net-monitoring state.
+   * If absent (legacy / test), a local engine is created as before.
+   */
+  voiceEngine?: VoiceEngine;
   serverEntry: ServerEntry;
   onTransmittingChange: (net: string | null) => void;
 }
@@ -84,10 +93,16 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
   return prefs;
 }
 
-export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetListPanelProps) {
+export function NetListPanel({ client, voiceEngine: externalEngine, serverEntry, onTransmittingChange }: NetListPanelProps) {
   const [nets, setNets] = useState<NetSummary[]>([]);
   const [uiState, setUiState] = useState<Map<string, PerNetUiState>>(new Map());
-  const [engine] = useState(() => new VoiceEngine(client));
+  // Use the shared engine from AppState when available; fall back to a local
+  // instance for backwards compatibility (tests, storybook, etc.).
+  const [localEngine] = useState(() => externalEngine ?? new VoiceEngine(client));
+  // Stable ref so effects always see the current engine without re-subscribing
+  const engineRef = useRef<VoiceEngine>(localEngine);
+  engineRef.current = externalEngine ?? localEngine;
+  const engine = engineRef.current;
   const [ptt] = useState(() => new PttController(engine));
   const [transmitting, setTransmitting] = useState<string | null>(null);
   const [availableChirps, setAvailableChirps] = useState<ChirpSummary[]>([]);
@@ -178,13 +193,19 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
     return () => clearInterval(i);
   }, [ptt]);
 
-  // Shutdown engine + ptt controller on unmount
+  // Shutdown ptt controller on unmount.
+  // The VoiceEngine is NOT shut down here when it was provided externally —
+  // AppState owns the engine's lifetime and will shut it down alongside the
+  // ClientHandle on logout / server removal.
   useEffect(() => {
     return () => {
       void ptt.shutdown();
-      void engine.shutdown();
+      if (!externalEngine) {
+        void localEngine.shutdown();
+      }
     };
-  }, [engine, ptt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ptt]);
 
   async function handleToggleMonitor(net: NetSummary) {
     const current = uiState.get(net.matrixRoomId) ?? defaultUi();

@@ -13,6 +13,7 @@ import {
   CrewBoardingToast,
   type CrewBoardingToastEntry,
 } from "../components/CrewBoardingToast";
+import type { VoiceEngine } from "../voice/VoiceEngine";
 
 /** Max toasts shown simultaneously. */
 const MAX_CREW_TOASTS = 3;
@@ -21,25 +22,36 @@ const AUTO_DISMISS_INTERVAL_MS = 1000;
 
 interface HomeProps {
   client: MatrixClient;
+  /**
+   * Shared VoiceEngine for this server — created at AppState level and passed
+   * down so NetListPanel does not create a duplicate instance.
+   * May be undefined if the server is not yet signed in (shouldn't occur at
+   * "home" screen, but kept optional for safety).
+   */
+  voiceEngine?: VoiceEngine;
   onLogout: () => Promise<void> | void;
   serverEntry: ServerEntry;
   onTransmittingChange: (net: string | null) => void;
   /**
-   * Crew-boarding toasts to display. Populated by ScIntegration in Task 11;
-   * for now the queue is always empty until that wiring is in place.
+   * Crew-boarding toasts to display. Populated by ScIntegration when SC
+   * integration is enabled; otherwise empty.
    */
   crewBoardingToasts: CrewBoardingToastEntry[];
   /** Called when a toast is dismissed (by user action or auto-expire). */
   onDismissCrewBoardingToast: (toastId: string) => void;
+  /** Add an RSI handle to this server's SC integration auto-invite allowlist. */
+  onAddToAllowlist: (rsiHandle: string) => Promise<void>;
 }
 
 export function Home({
   client,
+  voiceEngine,
   onLogout,
   serverEntry,
   onTransmittingChange,
   crewBoardingToasts,
   onDismissCrewBoardingToast,
+  onAddToAllowlist,
 }: HomeProps) {
   const [creating, setCreating] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -73,9 +85,10 @@ export function Home({
   // but guard here too).
   const visibleToasts = crewBoardingToasts.slice(0, MAX_CREW_TOASTS);
 
-  // TODO Task 11: wire onAddToAllowlist to the real ScIntegration allowlist mutation.
-  async function handleAddToAllowlist(_rsiHandle: string): Promise<void> {
-    // Stubbed — Task 11 will replace this with the real implementation.
+  // Delegate directly to the AppState handler which persists + live-updates
+  // the ScIntegration instance for this server.
+  async function handleAddToAllowlist(rsiHandle: string): Promise<void> {
+    await onAddToAllowlist(rsiHandle);
   }
 
   // When admin board is open, render it full-screen instead of the normal content
@@ -133,6 +146,7 @@ export function Home({
       <div className="flex-1 overflow-auto">
         <NetListPanel
           client={client}
+          voiceEngine={voiceEngine}
           serverEntry={serverEntry}
           onTransmittingChange={onTransmittingChange}
         />
