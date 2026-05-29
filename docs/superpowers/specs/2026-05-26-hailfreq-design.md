@@ -399,3 +399,51 @@ Items marked ✓ were promoted to v1 and shipped in Plan 6 (2026-05-28 polish bu
 - **LiveKit E2EE / SFrame**: https://docs.livekit.io/home/client/tracks/encryption/
 - **CitizenID**: https://citizenid.space/ — Passport strategy: https://github.com/citizenid-space/passport-citizenid
 - **MSC3401** (Matrix native group VoIP signaling): https://github.com/matrix-org/matrix-spec-proposals/pull/3401
+
+## 13. Star Citizen Game.log Integration (Hailfreq extension, beyond original spec)
+
+Implemented in Plan 7. This is the killer feature that distinguishes Hailfreq from a generic Matrix/LiveKit comms client: zero-click voice-net management for Star Citizen ships, driven entirely by parsing the local `Game.log`. No cross-client coordination room is required — every event Hailfreq cares about already appears in the affected player's own log.
+
+### Why this works
+
+Star Citizen's in-game chat channel system emits three observable signals in the local `Game.log`:
+
+| In-game action | Log line shape |
+|---|---|
+| You connect to the game | `<TS> [Notice] <Expect Incoming Connection> ... nickname="<You>" playerGEID=<id>` |
+| You join any channel | `<TS> [Notice] <SHUDEvent_OnNotification> Added notification "You have joined channel '<Ship> : <Owner>'.` |
+| Another player joins a channel you are in | `<TS> <OtherPlayer> has joined the channel '<Ship> : <Owner>'.` |
+
+The owner field after the colon is the parser anchor — it tells Hailfreq whose ship the channel belongs to, regardless of which player just boarded.
+
+### Behaviors
+
+| When | Hailfreq does |
+|---|---|
+| You board your own ship | Auto-create (or open) the ship-net Matrix room, auto-monitor voice |
+| Crew boards your ship | Look up the crewmate's RSI handle via CitizenID profile cache → either auto-invite (if allowlisted) or surface a toast with one-click invite |
+| You board someone else's ship | Out of scope for v1 — operator deprioritized; could be added by detecting `owner != self` and looking up via Matrix room directory |
+| Ship destroyed/despawned | If `autoCloseOnDestruction` is set, stop monitoring (the room is not tombstoned; other crew may still want chat history) |
+
+### Privacy / opt-in
+
+- **Per-server "Watch Game.log" toggle** — default off; explicit opt-in
+- **Allowlist for auto-invite** — default empty; manual one-click invite is the default UX
+- **Game.log path** — local-only; never transmitted; auto-detected for Windows + Linux Wine prefixes (Lutris / Bottles / Steam Proton / `~/.wine`) with manual override
+- **Auto-created ship-nets** — encrypted Matrix rooms with the same SFrame E2EE as any other net
+
+### Data model
+
+Ship-nets are regular voice nets with three additional state events:
+
+- `org.hailfreq.ship.type` — ship class name (e.g., "Anvil Asgard")
+- `org.hailfreq.ship.owner-rsi` — RSI handle of the owner
+- `org.hailfreq.ship.owner-matrix-id` — Matrix user ID of the owner
+
+Room name convention: `🚢 {shipType} — {ownerRsi}`. The NetListPanel renders ship-nets at the top of the list with a "Ships" group header and a cyan border accent.
+
+### Known limitations
+
+- **Ship destruction parser** is best-effort (the operator did not have a destruction log sample at the time of writing); the regex is anchored on `<Vehicle Destruction>` / `<EntityDestroyed>` markers and should be refined against real logs on first encounter.
+- **RSI handle lookup** requires the crewmate to have signed in with CitizenID AND opted into publishing their RSI handle to their Matrix profile (Plan 5 Task 14).
+- **Cross-server / cross-org coordination** — each Hailfreq server is independent. If a crew member is in a different org's Hailfreq server, the auto-invite cannot find them.

@@ -26,6 +26,7 @@ After Plan 2, this client supports:
 - Drag-to-reorder server sidebar
 - System tray with minimize-to-tray
 - OS-level desktop notifications (per-server toggle)
+- Star Citizen integration: auto-create ship-nets when you board your ship, detect crew boarding via Game.log, one-click invite with CitizenID-verified RSI handle lookup, auto-close on destruction
 
 ## Quick start
 
