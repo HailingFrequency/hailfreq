@@ -6,7 +6,7 @@ import { createLiveKitE2EEWorker } from "./e2eeWorker";
 import { loadChirp, playChirp } from "./chirpPlayer";
 import type { MatrixClient } from "matrix-js-sdk";
 import { ExternalE2EEKeyProvider } from "livekit-client";
-import type { RemoteAudioTrack, RemoteParticipant } from "livekit-client";
+import type { Room, RemoteAudioTrack, RemoteParticipant } from "livekit-client";
 
 /** Inbound silence debounce: only play inbound chirp if participant has been silent ≥ this long. */
 const INBOUND_CHIRP_DEBOUNCE_MS = 2000;
@@ -103,6 +103,16 @@ export class VoiceEngine {
   on<E extends keyof VoiceEngineEvents>(event: E, handler: VoiceEngineEvents[E]): this {
     this.listeners[event] = handler;
     return this;
+  }
+
+  /**
+   * Get the live LiveKit Room for a monitored net, or null if not currently
+   * connected. ShareEngine and any future media layer uses this to publish/
+   * subscribe additional tracks without duplicating the connection.
+   */
+  getLiveKitRoom(matrixRoomId: string): Room | null {
+    const net = this.nets.get(matrixRoomId);
+    return net?.connection.rawRoom ?? null;
   }
 
   /** Lazily initialize the AudioContext. Must be called from a user gesture (e.g., first net monitor) in some browsers. */
