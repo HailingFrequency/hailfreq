@@ -108,14 +108,14 @@ docker compose --file compose.yml build livekit-auth 2>&1 | tail -3 || \
 #   - We're using podman (not docker)
 #   - We're rootless (not running as root)
 #   - The volume already exists
-COMPOSE_TOOL=""
-if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-  COMPOSE_TOOL="docker"
-elif command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
-  COMPOSE_TOOL="podman"
+USING_PODMAN="no"
+if command -v podman >/dev/null 2>&1; then
+  # podman may be reached directly OR via a docker-shim that wraps podman.
+  # Either way, if podman is installed and we're rootless, the volume needs the chown.
+  USING_PODMAN="yes"
 fi
 
-if [[ "$COMPOSE_TOOL" == "podman" ]] && [[ "$(id -u)" != "0" ]]; then
+if [[ "$USING_PODMAN" == "yes" ]] && [[ "$(id -u)" != "0" ]]; then
   SYNAPSE_VOLUME_PATH="$(podman volume inspect hailfreq_synapse_data 2>/dev/null | jq -r '.[0].Mountpoint // empty')"
   if [[ -n "$SYNAPSE_VOLUME_PATH" && -d "$SYNAPSE_VOLUME_PATH" ]]; then
     echo "→ Applying rootless podman chown to $SYNAPSE_VOLUME_PATH"
