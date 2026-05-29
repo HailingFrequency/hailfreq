@@ -13,7 +13,7 @@ import { listSources } from "./desktopCapture";
 import type { FocusedAppInfo, DesktopCaptureSource } from "../shared/ipc";
 import { showNotification } from "./notifications";
 import type { NotifyOptions } from "./notifications";
-import type { Settings, ServerEntry, FocusedAppPttSettings } from "../shared/types";
+import type { Settings, ServerEntry, FocusedAppPttSettings, BridgeConfig } from "../shared/types";
 import type { StoredCredentials } from "../shared/ipc";
 
 export function registerIpcHandlers(): void {
@@ -144,5 +144,36 @@ export function registerIpcHandlers(): void {
       throw new Error("settings:setFocusedAppPtt: allowlistEntries must contain only strings");
     }
     settings.set("focusedAppPtt", focusedAppPtt as FocusedAppPttSettings);
+  });
+
+  ipcMain.handle("settings:setBridges", (_event, args: unknown): void => {
+    if (args === null || typeof args !== "object" || !("bridges" in args)) {
+      throw new Error("settings:setBridges: args must be { bridges: BridgeConfig[] }");
+    }
+    const { bridges } = args as { bridges: unknown };
+    if (!Array.isArray(bridges)) {
+      throw new Error("settings:setBridges: bridges must be an array");
+    }
+    for (const b of bridges) {
+      if (!b || typeof b !== "object") throw new Error("settings:setBridges: bridges contains non-object entry");
+      const bc = b as Partial<BridgeConfig>;
+      if (typeof bc.id !== "string" || typeof bc.name !== "string") throw new Error("settings:setBridges: bridge entry missing id/name");
+      if (!bc.source || typeof bc.source.serverId !== "string" || typeof bc.source.matrixRoomId !== "string") {
+        throw new Error("settings:setBridges: bridge entry has invalid source");
+      }
+      if (!bc.target || typeof bc.target.serverId !== "string" || typeof bc.target.matrixRoomId !== "string") {
+        throw new Error("settings:setBridges: bridge entry has invalid target");
+      }
+      if (!["smart", "always-on", "ptt-relay"].includes(bc.mode as string)) {
+        throw new Error("settings:setBridges: bridge entry has invalid mode");
+      }
+      if (typeof bc.smartThreshold !== "number" || bc.smartThreshold < 0 || bc.smartThreshold > 1) {
+        throw new Error("settings:setBridges: smartThreshold must be 0..1");
+      }
+      if (typeof bc.enabled !== "boolean" || typeof bc.bidirectional !== "boolean") {
+        throw new Error("settings:setBridges: enabled/bidirectional must be boolean");
+      }
+    }
+    settings.set("bridges", bridges as BridgeConfig[]);
   });
 }

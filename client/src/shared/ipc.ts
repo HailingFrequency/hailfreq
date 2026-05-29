@@ -1,4 +1,4 @@
-import type { Settings, ServerEntry, FocusedAppPttSettings } from "./types";
+import type { Settings, ServerEntry, FocusedAppPttSettings, BridgeConfig } from "./types";
 
 export interface ChirpSummary {
   id: string;
@@ -86,6 +86,7 @@ export interface IpcChannels {
   "sc:stopWatch": { args: []; result: void };
   "focus:get": { args: []; result: FocusedAppInfo };
   "settings:setFocusedAppPtt": { args: [{ focusedAppPtt: FocusedAppPttSettings }]; result: void };
+  "settings:setBridges": { args: [{ bridges: BridgeConfig[] }]; result: void };
   "share:listSources": { args: []; result: DesktopCaptureSource[] };
 }
 
