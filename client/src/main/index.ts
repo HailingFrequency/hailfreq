@@ -5,11 +5,13 @@ import { settings } from "./store";
 import { migrateLegacyCredentials } from "./tokens";
 import { unregisterAllHolds } from "./nativeKeyListener";
 import { createTray, markQuitting, shouldQuitOnClose } from "./tray";
+import { startFocusProbe, stopFocusProbe } from "./windowFocus";
 
 let mainWindow: BrowserWindow | null = null;
 
 app.whenReady().then(async () => {
   registerIpcHandlers();
+  startFocusProbe();
   // If migration just ran (single server with no token file yet), move the legacy token
   const servers = settings.get("servers");
   if (servers.length === 1) {
@@ -56,6 +58,7 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   unregisterAllHolds();
+  stopFocusProbe();
 });
 
 // Prevent navigation to arbitrary URLs (defense in depth)

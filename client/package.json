@@ -17,6 +17,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "active-win": "^8.2.0",
     "electron-store": "^10.0.0",
     "livekit-client": "^2.19.0",
     "matrix-js-sdk": "^35.0.0",
