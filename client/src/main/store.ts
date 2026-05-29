@@ -8,6 +8,7 @@ const defaults: Settings = {
   ui: { theme: "dark" },
   focusedAppPtt: { enabled: false, allowlistEntries: ["StarCitizen"] },
   bridges: [],
+  audioSetupComplete: false,
 };
 
 interface LegacyV1Settings {
@@ -70,6 +71,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
         ? typed.focusedAppPtt as FocusedAppPttSettings
         : { enabled: false, allowlistEntries: ["StarCitizen"] },
       bridges: [],
+      audioSetupComplete: false,
     };
   }
 
@@ -88,6 +90,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
     ...(typeof typed.scInstallPath === "string" ? { scInstallPath: typed.scInstallPath } : {}),
     focusedAppPtt: typed.focusedAppPtt ?? { enabled: false, allowlistEntries: ["StarCitizen"] },
     bridges: typed.bridges ?? [],
+    ...(typeof typed.audioSetupComplete === "boolean" ? { audioSetupComplete: typed.audioSetupComplete } : {}),
   };
   return settingsWithFocus;
 }

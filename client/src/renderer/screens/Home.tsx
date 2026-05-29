@@ -19,6 +19,7 @@ import type { ShareEngine } from "../share/ShareEngine";
 import type { ActiveShareSummary, LocalShareState } from "../share/types";
 import { SharingStatusBar } from "../components/SharingStatusBar";
 import { listNets } from "../matrix/nets";
+import { AudioSetupWizard } from "./AudioSetupWizard";
 
 /** Max toasts shown simultaneously. */
 const MAX_CREW_TOASTS = 3;
@@ -99,6 +100,15 @@ export function Home({
   const [adminCaps, setAdminCaps] = useState<AdminCapabilities | null>(null);
   const [showAdmin, setShowAdmin] = useState(false);
 
+  // First-run audio wizard — null while loading, false = show wizard, true = done
+  const [audioSetupComplete, setAudioSetupComplete] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void window.hailfreq.invoke("settings:get").then((s) => {
+      setAudioSetupComplete(!!s.audioSetupComplete);
+    });
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const recompute = () => {
@@ -159,6 +169,12 @@ export function Home({
     if (match) return match.properties.name;
     // Fallback: strip leading "!" and server part from the room id
     return share.matrixRoomId.split(":")[0].replace("!", "");
+  }
+
+  // Show first-run audio wizard until the user completes or skips it.
+  // null = still loading settings (don't flash wizard), false = show wizard.
+  if (audioSetupComplete === false) {
+    return <AudioSetupWizard onComplete={() => setAudioSetupComplete(true)} />;
   }
 
   // When admin board is open, render it full-screen instead of the normal content

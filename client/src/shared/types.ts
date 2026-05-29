@@ -115,6 +115,11 @@ export interface Settings {
    * default to [] when reading via ?? operator.
    */
   bridges?: BridgeConfig[];
+  /**
+   * Whether the first-run audio device wizard has been completed or skipped.
+   * False on fresh install; set to true after the wizard finishes.
+   */
+  audioSetupComplete?: boolean;
 }
 
 declare global {

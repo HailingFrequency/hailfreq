@@ -146,6 +146,17 @@ export function registerIpcHandlers(): void {
     settings.set("focusedAppPtt", focusedAppPtt as FocusedAppPttSettings);
   });
 
+  ipcMain.handle("settings:setAudioSetupComplete", (_event, args: unknown): void => {
+    if (args === null || typeof args !== "object" || !("value" in args)) {
+      throw new Error("settings:setAudioSetupComplete: args must be { value: boolean }");
+    }
+    const v = (args as { value: unknown }).value;
+    if (typeof v !== "boolean") {
+      throw new Error("settings:setAudioSetupComplete: value must be boolean");
+    }
+    settings.set("audioSetupComplete", v);
+  });
+
   ipcMain.handle("settings:setBridges", (_event, args: unknown): void => {
     if (args === null || typeof args !== "object" || !("bridges" in args)) {
       throw new Error("settings:setBridges: args must be { bridges: BridgeConfig[] }");
