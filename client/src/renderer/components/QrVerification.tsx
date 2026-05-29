@@ -484,11 +484,16 @@ function stringToUint8ClampedArray(str: string): Uint8ClampedArray {
  * (available in the Electron renderer) so the library treats it as binary mode.
  */
 async function renderQrBytes(bytes: Uint8ClampedArray): Promise<string> {
-  // Convert to regular Buffer for the qrcode library
+  // Convert to regular Buffer for the qrcode library.
+  // Pass as a segment-array with mode:"byte" — toDataURL rejects a raw Buffer
+  // but accepts the segment-array form for arbitrary binary data.
   const buf = Buffer.from(bytes);
-  return QRCode.toDataURL(buf as unknown as string, {
-    errorCorrectionLevel: "L",
-    margin: 2,
-    width: 256,
-  });
+  return QRCode.toDataURL(
+    [{ data: buf, mode: "byte" }],
+    {
+      errorCorrectionLevel: "L",
+      margin: 2,
+      width: 256,
+    },
+  );
 }
