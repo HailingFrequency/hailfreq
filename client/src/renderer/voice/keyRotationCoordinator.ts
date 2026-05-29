@@ -74,7 +74,7 @@ export function startKeyRotationCoordinator(
       const { keyBytes, keyIndex } = await rotateSframeKey(client, roomId);
       events.onNewKey(roomId, keyBytes, keyIndex);
     } catch (err) {
-      console.error(`[keyRotationCoordinator] Key rotation failed for ${roomId}:`, err);
+      console.error("[keyRotationCoordinator] Key rotation failed for %s:", roomId, err);
     }
   };
 

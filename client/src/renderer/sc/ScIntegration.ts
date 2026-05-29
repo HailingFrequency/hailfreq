@@ -141,7 +141,10 @@ export class ScIntegration {
           await this.client.invite(shipNetRoomId, matrixUserId);
         } catch (err) {
           console.error(
-            `[ScIntegration] auto-invite failed — user: ${matrixUserId}, room: ${shipNetRoomId}, handle: ${crewNickname}`,
+            "[ScIntegration] auto-invite failed — user: %s, room: %s, handle: %s",
+            matrixUserId,
+            shipNetRoomId,
+            crewNickname,
             err,
           );
         }

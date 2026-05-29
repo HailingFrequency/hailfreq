@@ -8,6 +8,10 @@ on:
   release:
     types: [created, published]
 
+# Default to read-only; the job below elevates to contents:write only for itself.
+permissions:
+  contents: read
+
 jobs:
   attach-compose:
     runs-on: ubuntu-latest

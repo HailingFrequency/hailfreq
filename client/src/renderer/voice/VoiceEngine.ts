@@ -231,7 +231,7 @@ export class VoiceEngine {
           void this.unmonitorNet(args.matrixRoomId).then(() =>
             this.monitorNet({ matrixRoomId: args.matrixRoomId, priority: args.priority }).catch(
               (err: unknown) => {
-                console.error(`[VoiceEngine] Re-monitor failed for ${args.matrixRoomId}:`, err);
+                console.error("[VoiceEngine] Re-monitor failed for %s:", args.matrixRoomId, err);
               },
             ),
           );

@@ -32,7 +32,10 @@ export async function publishOwnCitizenIdProfile(
   client: MatrixClient,
   claim: CitizenIdProfileClaim,
 ): Promise<void> {
-  await client.setAccountData(ACCOUNT_DATA_TYPE as any, claim);
+  // matrix-js-sdk's typed setAccountData overloads only cover known event
+  // types; this is an app-specific custom key, so we cast both the type and
+  // the content (claim lacks the index signature the SDK now requires).
+  await client.setAccountData(ACCOUNT_DATA_TYPE as any, claim as any);
 }
 
 /** In-memory cache: userId → claim (or null = definitively not found) */

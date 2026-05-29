@@ -523,7 +523,7 @@ export function AppState() {
         // will restart the correct one when state next updates.
         // (The newPath parameter is available for future per-server path logic.)
         void integration.stop().catch((err: unknown) => {
-          console.error(`[AppState] ScIntegration stop (tailerReplaced) failed for ${serverId}:`, err);
+          console.error("[AppState] ScIntegration stop (tailerReplaced) failed for %s:", serverId, err);
         });
         integrations.delete(serverId);
       }
@@ -549,7 +549,7 @@ export function AppState() {
     for (const [serverId, integration] of integrations) {
       if (!desired.has(serverId)) {
         void integration.stop().catch((err: unknown) => {
-          console.error(`[AppState] ScIntegration stop failed for ${serverId}:`, err);
+          console.error("[AppState] ScIntegration stop failed for %s:", serverId, err);
         });
         integrations.delete(serverId);
       }
@@ -602,7 +602,9 @@ export function AppState() {
         // Start the watcher; catch errors so a bad path doesn't crash the app
         void integration.start(scPath!).catch((err: unknown) => {
           console.error(
-            `[AppState] ScIntegration.start failed for ${serverId} (path: ${scPath}):`,
+            "[AppState] ScIntegration.start failed for %s (path: %s):",
+            serverId,
+            scPath,
             err,
           );
           integrations.delete(serverId);
@@ -614,7 +616,7 @@ export function AppState() {
     return () => {
       for (const [serverId, integration] of integrations) {
         void integration.stop().catch((err: unknown) => {
-          console.error(`[AppState] ScIntegration stop (cleanup) failed for ${serverId}:`, err);
+          console.error("[AppState] ScIntegration stop (cleanup) failed for %s:", serverId, err);
         });
       }
       integrations.clear();

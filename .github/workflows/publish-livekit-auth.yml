@@ -11,6 +11,10 @@ on:
       - 'kit-v*'
   workflow_dispatch:
 
+# Default to read-only; the build job elevates to packages:write only for itself.
+permissions:
+  contents: read
+
 env:
   GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/livekit-auth
   DOCKERHUB_IMAGE: hailfreq/lk-auth
