@@ -235,9 +235,7 @@ export function AppState() {
    * read current values as state changes over time.
    */
   const stateRef = useRef(state);
-  useEffect(() => {
-    stateRef.current = state;
-  });
+  stateRef.current = state;
 
   /**
    * Single global BridgeEngine instance (bridges span servers, not per-server).
