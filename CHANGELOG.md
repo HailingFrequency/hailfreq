@@ -4,6 +4,56 @@ All notable changes to Hailfreq are recorded here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Note: client and server kit version independently. Kit releases use the `kit-vX.Y.Z` tag prefix.
+
+## [kit-0.3.0] - 2026-05-29
+
+Turnkey single-file server kit. Operator now downloads one `compose.yml` and creates a 4-line `.env` to deploy the full stack — no `git clone`, no `setup.sh`, no template files. Secrets auto-generate on first run into a managed Docker volume.
+
+### Server kit — single-file model
+
+- **All service configs inlined into `compose.yml`** via Compose v2 `configs:` blocks. The Caddyfile, livekit.yaml, turnserver.conf, synapse/homeserver.yaml, synapse/log.config, postgres init-db.sh no longer exist as separate template files. Compose substitutes `${VAR}` at parse time, so the rendered configs are operator-specific without per-deployment files.
+- **`bootstrap` container** runs once on first start, generates 7 cryptographic secrets (postgres password, Synapse macaroon/registration/form, LiveKit API key/secret, TURN shared secret) into a `hailfreq-secrets` Docker volume. Subsequent runs detect the `.bootstrap-complete` sentinel and exit immediately.
+- **Synapse custom inline entrypoint** reads the 5 Synapse-relevant secrets from `/run/secrets/`, runs `envsubst` over the inline homeserver.yaml template, then exec's the original `/start.py`. Installs `gettext-base` on demand (matrixdotorg/synapse ships without it).
+- **Postgres** uses standard `POSTGRES_PASSWORD_FILE` env convention pointing at the secrets volume — no custom entrypoint needed.
+- **livekit-auth** now reads `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` from `/run/secrets/livekit_api_*` files with env-var fallback for backwards compat. New image published.
+- **Caddy, livekit, coturn** consume their inline configs directly via the `configs:` mount mechanism — no entrypoint changes needed.
+
+### Server kit — registry distribution
+
+- **livekit-auth published to Docker Hub** as `docker.io/hailfreq/lk-auth:latest` alongside the GHCR `ghcr.io/hailingfrequency/livekit-auth:latest`. Both registries receive the same image (identical config SHA) on every push.
+- **`compose.yml` defaults the livekit-auth image to Docker Hub** (`docker.io/hailfreq/lk-auth:latest`). Override via `LIVEKIT_AUTH_IMAGE` env var to use GHCR or a local build.
+- **`compose.yml` attached as a release asset** via a new GitHub Actions workflow. Operators can deploy via `curl -L https://github.com/HailingFrequency/hailfreq/releases/latest/download/compose.yml`.
+
+### Server kit — removed (replaced by inline configs)
+
+- `server/Caddyfile.template`, `server/livekit/livekit.yaml.template`, `server/coturn/turnserver.conf.template`, `server/synapse/homeserver.yaml.template`, `server/synapse/log.config`, `server/synapse/init-db.sh`, `server/synapse/oidc-citizenid.yaml.snippet`
+- `server/scripts/setup.sh`, `server/scripts/generate-secrets.sh`
+- `server/.env.example`
+- Empty `server/livekit/`, `server/coturn/`, `server/synapse/` directories
+
+`server/scripts/healthcheck.sh` and `server/scripts/create-admin.sh` remain (they still serve operators on a running deployment).
+
+### Server kit — docs
+
+- `server/README.md` rewritten for the single-file deploy model
+- `server/docs/deployment.md` updated for download-compose flow
+- `server/docs/update.md` updated for `docker compose pull && up -d`
+- `server/docs/backup.md` adds the `hailfreq-secrets` volume to the backup table
+- `server/docs/troubleshooting.md` + `server/docs/citizenid-setup.md` updated to reference the inline model
+
+### Migration
+
+Existing v0.2 deployments (including the running rpk.chat server) continue to operate. v0.3 is a **fresh-deploy** model — no automatic migration path. Operators with running v0.2 stacks should stay on v0.2 unless they redeploy from scratch.
+
+### Known v0.3 limitations
+
+- CitizenID OIDC is currently a literal `oidc_providers: []` in the inline template. Operators who need OIDC can override via `compose.override.yml`. A future kit release will reintroduce conditional OIDC inline.
+- Bootstrap generates secrets ONCE. To rotate, an operator must delete `hailfreq-secrets` and `synapse_data` volumes (the macaroon secret derives session keys).
+- Smoke-tested via dry-run + partial bring-up on the dev machine; full end-to-end happens on a fresh VPS deploy.
+
+[kit-0.3.0]: https://github.com/HailingFrequency/hailfreq/releases/tag/kit-v0.3.0
+
 ## [0.2.0] - 2026-05-29
 
 First polish pass after initial deployment. Closes the gaps that prevented a fresh tester from getting end-to-end in a net without finding a second person.
