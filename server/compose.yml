@@ -153,12 +153,14 @@ services:
     depends_on:
       synapse:
         condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
     environment:
       PORT: "8088"
       SYNAPSE_URL: "http://synapse:8008"
       LIVEKIT_URL: "wss://${HAILFREQ_SERVER_HOSTNAME}/livekit"
-      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
-      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
+    volumes:
+      - hailfreq-secrets:/run/secrets:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8088/health"]
       interval: 15s

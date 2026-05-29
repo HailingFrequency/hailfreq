@@ -1,11 +1,29 @@
+import fs from "node:fs";
 import express, { type Request, type Response } from "express";
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+
+/**
+ * Read a secret value, preferring /run/secrets/<name> if it exists
+ * (Plan 10 secrets-volume pattern), falling back to environment variable.
+ * Throws if neither source provides the secret.
+ */
+function readSecret(secretName: string, envFallbackName: string): string {
+  const filePath = `/run/secrets/${secretName}`;
+  if (fs.existsSync(filePath)) {
+    return fs.readFileSync(filePath, "utf-8").trim();
+  }
+  const env = process.env[envFallbackName];
+  if (env) return env;
+  throw new Error(
+    `Secret '${secretName}' not available — checked ${filePath} and env var ${envFallbackName}`,
+  );
+}
 
 const PORT = parseInt(process.env.PORT || "8088", 10);
 const SYNAPSE_URL = mustEnv("SYNAPSE_URL");
 const LIVEKIT_URL = mustEnv("LIVEKIT_URL");
-const LIVEKIT_API_KEY = mustEnv("LIVEKIT_API_KEY");
-const LIVEKIT_API_SECRET = mustEnv("LIVEKIT_API_SECRET");
+const LIVEKIT_API_KEY = readSecret("livekit_api_key", "LIVEKIT_API_KEY");
+const LIVEKIT_API_SECRET = readSecret("livekit_api_secret", "LIVEKIT_API_SECRET");
 
 const roomService = new RoomServiceClient(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
 
