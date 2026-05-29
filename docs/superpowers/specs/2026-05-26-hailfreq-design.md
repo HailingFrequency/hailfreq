@@ -447,3 +447,27 @@ Room name convention: `🚢 {shipType} — {ownerRsi}`. The NetListPanel renders
 - **Ship destruction parser** is best-effort (the operator did not have a destruction log sample at the time of writing); the regex is anchored on `<Vehicle Destruction>` / `<EntityDestroyed>` markers and should be refined against real logs on first encounter.
 - **RSI handle lookup** requires the crewmate to have signed in with CitizenID AND opted into publishing their RSI handle to their Matrix profile (Plan 5 Task 14).
 - **Cross-server / cross-org coordination** — each Hailfreq server is independent. If a crew member is in a different org's Hailfreq server, the auto-invite cannot find them.
+
+## 14. Focused-app PTT (Hailfreq extension, beyond original spec)
+
+Implemented in Plan 8a. Adds an OS-level "focus gate" to the global PTT key handler so the key only fires when a user-chosen app (typically Star Citizen) has window focus. When the gate is off, PTT works as it did before (always-on global). When the gate is on, the PTT key is a no-op while the user is typing in chat, browser, or terminal — those apps receive the keystroke normally.
+
+### Implementation
+
+- Main-process polling probe via `active-win` (500ms interval), caches focused window's process name + title
+- Pure decision function `shouldGatePass({ focus, allowlist })` lives in the renderer, unit-tested
+- PttController reads the cache over IPC at key-press time and decides whether to dispatch
+- Key-release always fires regardless of focus — guarantees the mic never gets stuck open
+- In-flight guard on tap-to-toggle prevents key-repeat double-toggle races
+- IPC failure fails open (PTT remains usable during main-process teardown)
+
+### Wayland fallback
+
+Wayland has no portable API for querying the active window (deliberate compositor security model). On Wayland sessions, the focus probe is skipped and the gate fails-open (permits all PTT). The settings panel displays a non-blocking warning so users know their gate config is inactive on this session type. X11 sessions work normally.
+
+### Allowlist semantics
+
+- Case-insensitive substring match against (`processName` + " " + `title`), whitespace-normalized so "StarCitizen" matches "Star Citizen" titles
+- Default entry: `"StarCitizen"` — matches both Windows-native and Wine-prefix process names + window titles
+- Users can add additional substrings (e.g., `"ElementX"`, `"Firefox"`) via the settings UI
+- Empty allowlist = gate effectively disabled (fail-open); whitespace-only entries do not pass
