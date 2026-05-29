@@ -1,4 +1,5 @@
 import { app, ipcMain, BrowserWindow } from "electron";
+import path from "node:path";
 import { settings, addServer, removeServer, setActiveServer, updateServer, reorderServers } from "./store";
 import { saveCredentials, loadCredentials, clearCredentials, migrateLegacyCredentials } from "./tokens";
 import { runSsoFlow } from "./oidc";
@@ -73,7 +74,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("sc:validatePath", (_event, args: { path: string }) => validateGameLogPath(args.path));
   ipcMain.handle("sc:startWatch", async (_event, args: { gameLogPath: string }) => {
     if (typeof args.gameLogPath !== "string") throw new Error("gameLogPath must be a string");
-    const path = await import("node:path");
     if (!path.isAbsolute(args.gameLogPath)) throw new Error("gameLogPath must be an absolute path");
     if (path.basename(args.gameLogPath) !== "Game.log") throw new Error("gameLogPath must point to Game.log");
     return startWatch(args.gameLogPath);
