@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
-import type { NetPreferences, ServerEntry } from "@shared/types";
+import type { FocusedAppPttSettings, NetPreferences, ServerEntry } from "@shared/types";
 import type { ChirpSummary } from "@shared/ipc";
 import { listNets, subscribeToNetsChanges, type NetSummary } from "../matrix/nets";
 import { NetRow } from "./NetRow";
@@ -20,6 +20,12 @@ interface NetListPanelProps {
   voiceEngine?: VoiceEngine;
   serverEntry: ServerEntry;
   onTransmittingChange: (net: string | null) => void;
+  /**
+   * Global focused-app PTT filter settings. When provided, key-press events
+   * are gated on the focused application matching an allowlist entry.
+   * Key-release events are never gated.
+   */
+  focusedAppPtt?: FocusedAppPttSettings;
 }
 
 const DEFAULT_OUTBOUND_CHIRP = "builtin:click";
@@ -93,7 +99,7 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
   return prefs;
 }
 
-export function NetListPanel({ client, voiceEngine: externalEngine, serverEntry, onTransmittingChange }: NetListPanelProps) {
+export function NetListPanel({ client, voiceEngine: externalEngine, serverEntry, onTransmittingChange, focusedAppPtt }: NetListPanelProps) {
   const [nets, setNets] = useState<NetSummary[]>([]);
   const [uiState, setUiState] = useState<Map<string, PerNetUiState>>(new Map());
   // Use the shared engine from AppState when available; fall back to a local
@@ -122,6 +128,22 @@ export function NetListPanel({ client, voiceEngine: externalEngine, serverEntry,
 
   // Track whether initial seed from voicePrefs has been applied
   const seededRef = useRef(false);
+
+  // Keep a live ref of focusedAppPtt so the gate provider closure always reads
+  // the current settings without stale-closure issues.
+  const focusedAppPttRef = useRef<FocusedAppPttSettings | undefined>(focusedAppPtt);
+  focusedAppPttRef.current = focusedAppPtt;
+
+  // Wire the focus-gate config provider into the PttController once on mount.
+  // The closure reads from the ref, so it stays current across every re-render.
+  useEffect(() => {
+    ptt.setFocusGateConfig(() => ({
+      enabled: focusedAppPttRef.current?.enabled ?? false,
+      allowlist: focusedAppPttRef.current?.allowlistEntries ?? [],
+    }));
+    // ptt is stable (created via useState initialiser) — this runs once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ptt]);
 
   // Persist a prefs snapshot back to the store
   const persistPrefs = useCallback(

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
-import type { ServerEntry } from "@shared/types";
+import type { FocusedAppPttSettings, ServerEntry } from "@shared/types";
 import { Button } from "../components/Button";
 import { NetListPanel } from "../components/NetListPanel";
 import { CreateNetDialog } from "../components/CreateNetDialog";
@@ -41,6 +41,8 @@ interface HomeProps {
   onDismissCrewBoardingToast: (toastId: string) => void;
   /** Add an RSI handle to this server's SC integration auto-invite allowlist. */
   onAddToAllowlist: (rsiHandle: string) => Promise<void>;
+  /** Global focused-app PTT filter settings. Forwarded to NetListPanel. */
+  focusedAppPtt?: FocusedAppPttSettings;
 }
 
 export function Home({
@@ -52,6 +54,7 @@ export function Home({
   crewBoardingToasts,
   onDismissCrewBoardingToast,
   onAddToAllowlist,
+  focusedAppPtt,
 }: HomeProps) {
   const [creating, setCreating] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -149,6 +152,7 @@ export function Home({
           voiceEngine={voiceEngine}
           serverEntry={serverEntry}
           onTransmittingChange={onTransmittingChange}
+          focusedAppPtt={focusedAppPtt}
         />
       </div>
 

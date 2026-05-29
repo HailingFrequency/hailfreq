@@ -1,7 +1,13 @@
 import type { VoiceEngine } from "./VoiceEngine";
 import { VoiceActivationDetector } from "./voiceActivation";
+import { shouldGatePass } from "./focusGate";
 
 export type PttMode = "toggle" | "hold" | "voice";
+
+export interface PttFocusGateConfig {
+  enabled: boolean;
+  allowlist: string[];
+}
 
 interface PttBinding {
   matrixRoomId: string;
@@ -23,6 +29,13 @@ export class PttController {
   private voiceDetectors = new Map<string, VoiceActivationDetector>();
   /** Currently transmitting net (single, since only one net at a time can be active). */
   private transmitting: string | null = null;
+  /** Provider for the current focus-gate config. Returns default-off config until wired. */
+  private getFocusGateConfig: () => PttFocusGateConfig = () => ({ enabled: false, allowlist: [] });
+
+  /** Wire a live focus-gate config provider. The closure must return current settings. */
+  setFocusGateConfig(provider: () => PttFocusGateConfig): void {
+    this.getFocusGateConfig = provider;
+  }
 
   constructor(engine: VoiceEngine) {
     this.engine = engine;
@@ -32,15 +45,41 @@ export class PttController {
       // Tap-to-toggle is the only mode wired in this task.
       // Voice activation (Task 10C) extends this.
       if (binding.mode === "toggle") {
-        void this.togglePtt(binding.matrixRoomId);
+        void this.gatedTogglePtt(binding.matrixRoomId);
       }
     });
     this.unsubscribeNativeListener = window.hailfreq.onNativeHotkey((event) => {
       const binding = Array.from(this.bindings.values()).find((b) => b.hotkeyId === event.id);
       if (!binding || binding.mode !== "hold") return;
-      if (event.direction === "down") void this.holdStart(binding.matrixRoomId);
+      // Key-RELEASE (direction "up") always fires — never gated.
+      // Key-PRESS (direction "down") goes through the focus gate.
+      if (event.direction === "down") void this.gatedHoldStart(binding.matrixRoomId);
       else void this.holdStop(binding.matrixRoomId);
     });
+  }
+
+  /** Toggle PTT with focus-gate check (key-press only). */
+  private async gatedTogglePtt(matrixRoomId: string): Promise<void> {
+    const config = this.getFocusGateConfig();
+    if (config.enabled) {
+      const focus = await window.hailfreq.invoke("focus:get");
+      if (!shouldGatePass({ focus, allowlist: config.allowlist })) {
+        return;
+      }
+    }
+    await this.togglePtt(matrixRoomId);
+  }
+
+  /** Start hold-PTT with focus-gate check (key-press only). */
+  private async gatedHoldStart(matrixRoomId: string): Promise<void> {
+    const config = this.getFocusGateConfig();
+    if (config.enabled) {
+      const focus = await window.hailfreq.invoke("focus:get");
+      if (!shouldGatePass({ focus, allowlist: config.allowlist })) {
+        return;
+      }
+    }
+    await this.holdStart(matrixRoomId);
   }
 
   /** Bind a net's PTT mode. For toggle/hold, accelerator is required. */

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, useCallback } from "react";
-import type { ScIntegrationSettings, ServerEntry } from "@shared/types";
+import type { FocusedAppPttSettings, ScIntegrationSettings, ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
 import { startClient } from "./matrix/client";
@@ -73,6 +73,8 @@ interface AppLevelState {
   transmittingNet: string | null;
   /** Global SC Game.log path. Loaded once at boot from settings. */
   scInstallPath?: string;
+  /** Global focused-app PTT filter. Loaded once at boot from settings. */
+  focusedAppPtt?: FocusedAppPttSettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +166,7 @@ export function AppState() {
       const globalScreen: AppLevelState["globalScreen"] =
         settings.servers.length === 0 ? { kind: "no-servers" } : { kind: "active" };
 
-      setState({ servers, activeServerId, globalScreen, transmittingNet: null, scInstallPath: settings.scInstallPath });
+      setState({ servers, activeServerId, globalScreen, transmittingNet: null, scInstallPath: settings.scInstallPath, focusedAppPtt: settings.focusedAppPtt });
     })();
 
     // Best-effort shutdown of all ClientHandles and VoiceEngines when the component unmounts.
@@ -888,6 +890,7 @@ export function AppState() {
             onTransmittingChange={handleTransmittingChange}
             onDismissCrewBoardingToast={makeDismissCrewBoardingToast(activeInstance.entry.id)}
             onAddToAllowlist={makeAddToAllowlist(activeInstance.entry.id)}
+            focusedAppPtt={state.focusedAppPtt}
           />
         ) : (
           <Centered>No server selected.</Centered>
@@ -913,6 +916,7 @@ interface ActiveServerViewProps {
   onTransmittingChange: (net: string | null) => void;
   onDismissCrewBoardingToast: (toastId: string) => void;
   onAddToAllowlist: (rsiHandle: string) => Promise<void>;
+  focusedAppPtt?: FocusedAppPttSettings;
 }
 
 function ActiveServerView({
@@ -927,6 +931,7 @@ function ActiveServerView({
   onTransmittingChange,
   onDismissCrewBoardingToast,
   onAddToAllowlist,
+  focusedAppPtt,
 }: ActiveServerViewProps) {
   const { screen, entry, handle, voiceEngine, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
 
@@ -1034,6 +1039,7 @@ function ActiveServerView({
           crewBoardingToasts={crewBoardingToasts}
           onDismissCrewBoardingToast={onDismissCrewBoardingToast}
           onAddToAllowlist={onAddToAllowlist}
+          focusedAppPtt={focusedAppPtt}
         />
       );
 
