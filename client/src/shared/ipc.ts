@@ -13,6 +13,15 @@ export interface StoredCredentials {
   homeserverUrl: string;
 }
 
+export interface ScInstallCandidate {
+  /** Absolute path to a Game.log file that exists. */
+  gameLogPath: string;
+  /** Which branch this is (LIVE / PTU / EPTU). */
+  branch: string;
+  /** Source hint for UI: "registry", "default-windows", "wine-lutris", "wine-default", "bottles", "steam-proton", "manual" */
+  source: string;
+}
+
 // Source of truth for all IPC channels. Add new channels here.
 export interface IpcChannels {
   "app:version": { args: []; result: string };
@@ -47,6 +56,8 @@ export interface IpcChannels {
   "chirps:list": { args: []; result: ChirpSummary[] };
   "chirps:read": { args: [{ id: string }]; result: Uint8Array };
   "chirps:openFolder": { args: []; result: string };
+  "sc:findInstall": { args: []; result: ScInstallCandidate[] };
+  "sc:validatePath": { args: [{ path: string }]; result: boolean };
 }
 
 export type IpcChannelName = keyof IpcChannels;

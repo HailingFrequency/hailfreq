@@ -5,6 +5,7 @@ import { runSsoFlow } from "./oidc";
 import { registerHotkey, unregisterHotkey, listHotkeys } from "./globalHotkeys";
 import { registerHold, unregisterHold } from "./nativeKeyListener";
 import { listChirps, readChirp, openChirpFolder } from "./chirps";
+import { findScInstallCandidates, validateGameLogPath } from "./scInstallPath";
 import { showNotification } from "./notifications";
 import type { NotifyOptions } from "./notifications";
 import type { Settings, ServerEntry } from "../shared/types";
@@ -66,6 +67,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("chirps:list", () => listChirps());
   ipcMain.handle("chirps:read", (_e, args: { id: string }) => readChirp(args.id));
   ipcMain.handle("chirps:openFolder", () => openChirpFolder());
+
+  ipcMain.handle("sc:findInstall", () => findScInstallCandidates());
+  ipcMain.handle("sc:validatePath", (_event, args: { path: string }) => validateGameLogPath(args.path));
 
   ipcMain.handle("notify:show", (_event, opts: NotifyOptions): void => {
     showNotification(opts, () => BrowserWindow.getAllWindows()[0] ?? null);

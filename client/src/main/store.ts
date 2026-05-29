@@ -62,6 +62,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
       servers: [entry],
       activeServerId: entry.id,
       ui: typed.ui?.theme ? { theme: typed.ui.theme } : { theme: "dark" },
+      ...(typeof typed.scInstallPath === "string" ? { scInstallPath: typed.scInstallPath } : {}),
     };
   }
 
@@ -70,6 +71,7 @@ export function migrateLegacyShape(raw: unknown): Settings {
     servers: Array.isArray(typed.servers) ? typed.servers : [],
     activeServerId: typeof typed.activeServerId === "string" ? typed.activeServerId : "",
     ui: typed.ui ? { theme: typed.ui.theme ?? "dark" } : { theme: "dark" },
+    ...(typeof typed.scInstallPath === "string" ? { scInstallPath: typed.scInstallPath } : {}),
   };
 }
 

@@ -53,6 +53,12 @@ export interface Settings {
   activeServerId: string;
   /** UI preferences. */
   ui: { theme: "dark" };
+  /**
+   * Absolute path to the Star Citizen Game.log file selected by the user.
+   * Omitted on first run; set via the SC integration settings UI.
+   * Machine-global (one SC install per machine).
+   */
+  scInstallPath?: string;
 }
 
 declare global {
