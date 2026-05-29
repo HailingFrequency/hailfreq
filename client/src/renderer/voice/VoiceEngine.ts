@@ -66,6 +66,8 @@ export class VoiceEngine {
   private micStream: MediaStream | null = null;
   /** AudioContext source node wrapping the mic stream. Used by voice-activation analysis. */
   private micSourceNode: MediaStreamAudioSourceNode | null = null;
+  /** AnalyserNode connected to the mic source. Created alongside micSourceNode. Used for RMS level metering. */
+  private localMicAnalyser: AnalyserNode | null = null;
   /** Hangover timer for priority ducking. */
   private duckHangoverTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Handle to unsubscribe the SFrame key-rotation coordinator on shutdown. */
@@ -316,8 +318,34 @@ export class VoiceEngine {
     }
     if (!this.micSourceNode) {
       this.micSourceNode = this.audioCtx!.createMediaStreamSource(this.micStream);
+      // Wire an analyser for RMS level metering (used by subscribeMicLevel).
+      this.localMicAnalyser = this.audioCtx!.createAnalyser();
+      this.localMicAnalyser.fftSize = 1024;
+      this.micSourceNode.connect(this.localMicAnalyser);
     }
     return this.micSourceNode;
+  }
+
+  /**
+   * Subscribe to the local mic's RMS level (0..1).
+   * Polls at ~30 Hz while a mic analyser is available (i.e., after the first
+   * PTT or voice-activation mode starts the mic). Returns 0 when the mic has
+   * not been captured yet — the meter is "live" once the user engages PTT or
+   * enables voice-activation mode.
+   */
+  subscribeMicLevel(cb: (rms: number) => void): () => void {
+    const buf = new Float32Array(1024);
+    const timer = setInterval(() => {
+      if (!this.localMicAnalyser) {
+        cb(0);
+        return;
+      }
+      this.localMicAnalyser.getFloatTimeDomainData(buf);
+      let sumSquares = 0;
+      for (let i = 0; i < buf.length; i++) sumSquares += buf[i] * buf[i];
+      cb(Math.sqrt(sumSquares / buf.length));
+    }, 33);
+    return () => clearInterval(timer);
   }
 
   async shutdown(): Promise<void> {
@@ -326,6 +354,10 @@ export class VoiceEngine {
     await this.stopPtt();
     for (const id of Array.from(this.nets.keys())) {
       await this.unmonitorNet(id);
+    }
+    if (this.localMicAnalyser) {
+      this.localMicAnalyser.disconnect();
+      this.localMicAnalyser = null;
     }
     if (this.micSourceNode) {
       this.micSourceNode.disconnect();

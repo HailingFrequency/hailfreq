@@ -507,6 +507,7 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
         localShare={rowLocalShare}
         anyLocalShareActive={anyLocalShareActive}
         bridgeIndicator={bridgeIndicator}
+        voiceEngine={engine}
         onToggleMonitor={() => void handleToggleMonitor(net)}
         onVolumeChange={(v) => handleVolume(net.matrixRoomId, v)}
         onPttModeChange={(mode) => void handlePttModeChange(net.matrixRoomId, mode)}

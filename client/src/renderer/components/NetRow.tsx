@@ -4,6 +4,8 @@ import type { PttMode } from "../voice/PttController";
 import type { ChirpSummary } from "@shared/ipc";
 import type { ActiveShareSummary, LocalShareState } from "../share/types";
 import type { BridgeRunnerStatus } from "../bridge/types";
+import type { VoiceEngine } from "../voice/VoiceEngine";
+import { MicLevelBar } from "./MicLevelBar";
 
 export interface NetRowProps {
   net: NetSummary;
@@ -27,6 +29,8 @@ export interface NetRowProps {
   anyLocalShareActive: boolean;
   /** Set when this net is source or target of an active (idle/relaying) bridge. */
   bridgeIndicator: { bridgeName: string; status: BridgeRunnerStatus } | null;
+  /** VoiceEngine instance for mic level metering. */
+  voiceEngine: VoiceEngine | null;
   onToggleMonitor: () => void;
   onVolumeChange: (volume: number) => void;
   onPttModeChange: (mode: PttMode) => void;
@@ -58,6 +62,7 @@ export function NetRow({
   localShare,
   anyLocalShareActive,
   bridgeIndicator,
+  voiceEngine,
   onToggleMonitor,
   onVolumeChange,
   onPttModeChange,
@@ -221,6 +226,7 @@ export function NetRow({
                 </option>
               ))}
             </select>
+            <MicLevelBar voiceEngine={voiceEngine} className="ml-1" />
           </div>
           <button
             onClick={() => void window.hailfreq.invoke("chirps:openFolder")}
