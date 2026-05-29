@@ -471,3 +471,41 @@ Wayland has no portable API for querying the active window (deliberate composito
 - Default entry: `"StarCitizen"` — matches both Windows-native and Wine-prefix process names + window titles
 - Users can add additional substrings (e.g., `"ElementX"`, `"Firefox"`) via the settings UI
 - Empty allowlist = gate effectively disabled (fail-open); whitespace-only entries do not pass
+
+## 15. Screen Sharing (Hailfreq extension, beyond original spec)
+
+Implemented in Plan 8b. Adds Discord-style screen sharing to Hailfreq nets, end-to-end-encrypted via the same SFrame infrastructure that protects voice. Used during ops planning — showing a star map, ship loadout, mission briefing — without trusting the SFU or Matrix homeserver to see the content.
+
+### Architecture
+
+- A `ShareEngine` parallel to `VoiceEngine` reuses the same LiveKit Room objects via `VoiceEngine.getLiveKitRoom(matrixRoomId)`
+- Publisher path: Electron `desktopCapturer.getSources` → user picks source → `getUserMedia` (legacy `chromeMediaSource: "desktop"` constraints, required by Electron's Chromium) → `room.localParticipant.publishTrack(...)` with the existing room SFrame key
+- Subscriber path: `RoomEvent.TrackSubscribed` filtered to `Track.Source.ScreenShare` and `Track.Source.ScreenShareAudio` → React viewer pane attaches `RemoteVideoTrack` / `RemoteAudioTrack` to `<video>` / `<audio>` elements
+- Single concurrent local share (across all nets) to bound bandwidth and UX
+- Remote participants can each share independently; multiple viewer panes are not blocked by a local share
+- LiveKit room listeners are explicitly tracked and removed on detachRoom / shutdown (no orphan event leaks)
+- Audio-before-video race is handled via a `pendingAudio` map so audio tracks arriving before the video track are stashed and merged when the video arrives
+- `stopOnUnpublish: false` passed to LiveKit so ShareEngine owns the MediaStreamTrack lifecycle (single-source-of-truth stop)
+
+### UX surfaces
+
+- "Share" button on each monitored net row (disabled when any local share is active)
+- "🔴 Sharing" indicator + Stop button when the local user is sharing to that net
+- "📺" indicator + click-to-view when a remote share is active in that net
+- Persistent "Sharing to <net>" status bar across the top of Home while local share is active (privacy reminder + quick-stop)
+- Source picker modal: thumbnails of screens + windows, "share system audio" opt-in checkbox, Esc / backdrop-click cancels
+
+### Privacy posture
+
+- Sharer always sees the OS-level source picker before any frame is captured (Electron's standard desktopCapturer flow)
+- Frames are SFrame-encrypted in the sharer's renderer using the room's existing voice key; the LiveKit SFU receives ciphertext and cannot decrypt
+- Subscribers decrypt using the same key they already hold for voice
+- No source name, window title, or frame data is logged or transmitted off-machine beyond the SFrame-encrypted track payload
+
+### Known limitations
+
+- macOS not tested (no macOS installer per scope)
+- System-audio capture works on Linux/Windows entire-screen sources; window-specific sources are typically silent
+- No annotation, recording, or remote control
+- No admin-board "disable sharing" policy yet — any monitoring member can share
+- Bandwidth: screen video over SFrame is heavy. Default constraints cap at 1920x1080 / 30fps; finer control deferred

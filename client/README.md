@@ -28,6 +28,7 @@ After Plan 2, this client supports:
 - OS-level desktop notifications (per-server toggle)
 - Star Citizen integration: auto-create ship-nets when you board your ship, detect crew boarding via Game.log, one-click invite with CitizenID-verified RSI handle lookup, auto-close on destruction
 - Focused-app PTT — gate the global PTT key on a chosen app (e.g., Star Citizen) having window focus, so the key passes through to chat / browser / terminal when the game isn't active
+- Screen sharing — share a screen or window to one net at a time, SFrame E2EE same as voice, optional system audio; subscribers see a 📺 indicator and open a viewer pane
 
 ## Quick start
 
