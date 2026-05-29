@@ -1,7 +1,7 @@
 import type { NetSummary } from "../matrix/nets";
 import { KeybindCapture } from "./KeybindCapture";
-
 import type { PttMode } from "../voice/PttController";
+import type { ChirpSummary } from "@shared/ipc";
 
 interface NetRowProps {
   net: NetSummary;
@@ -13,12 +13,17 @@ interface NetRowProps {
   keybind: string | null;
   keybindError?: string | null;
   voiceThresholdDb: number;
+  outboundChirp: string;
+  inboundChirp: string;
+  availableChirps: ChirpSummary[];
   onToggleMonitor: () => void;
   onVolumeChange: (volume: number) => void;
   onPttModeChange: (mode: PttMode) => void;
   onKeybindChange: (accel: string) => void;
   onKeybindClear: () => void;
   onVoiceThresholdChange: (db: number) => void;
+  onOutboundChirpChange: (id: string) => void;
+  onInboundChirpChange: (id: string) => void;
 }
 
 export function NetRow({
@@ -31,12 +36,17 @@ export function NetRow({
   keybind,
   keybindError,
   voiceThresholdDb,
+  outboundChirp,
+  inboundChirp,
+  availableChirps,
   onToggleMonitor,
   onVolumeChange,
   onPttModeChange,
   onKeybindChange,
   onKeybindClear,
   onVoiceThresholdChange,
+  onOutboundChirpChange,
+  onInboundChirpChange,
 }: NetRowProps) {
   return (
     <div className={`flex items-center gap-3 rounded border p-3 ${
@@ -115,6 +125,48 @@ export function NetRow({
       >
         {monitored ? "Monitoring" : "Monitor"}
       </button>
+
+      {availableChirps.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-slate-500">Out:</label>
+            <select
+              value={outboundChirp}
+              onChange={(e) => onOutboundChirpChange(e.target.value)}
+              className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-xs text-slate-200"
+              title="Outbound chirp (played locally when you start PTT)"
+            >
+              {availableChirps.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-slate-500">In:</label>
+            <select
+              value={inboundChirp}
+              onChange={(e) => onInboundChirpChange(e.target.value)}
+              className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-xs text-slate-200"
+              title="Inbound chirp (played when a remote participant starts transmitting)"
+            >
+              {availableChirps.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={() => void window.hailfreq.invoke("chirps:openFolder")}
+            className="text-xs text-slate-500 hover:text-slate-300 underline text-left"
+            title="Open folder to add custom chirp files"
+          >
+            Custom chirps…
+          </button>
+        </div>
+      )}
     </div>
   );
 }

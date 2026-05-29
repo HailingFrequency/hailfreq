@@ -262,7 +262,7 @@ When a new device logs in for an existing user, it has no keys. Two recovery pat
 
 Device verification is not dismissible. Unverified devices break the cross-signing chain and weaken Tier 3 — admins can see which members have unverified devices and prompt them.
 
-QR code verification deferred to v1.5.
+QR code verification shipped in Plan 6 (moved to v1 from v1.5; see §9.2).
 
 ### 7.5 Multi-server (v1)
 
@@ -345,12 +345,17 @@ For individual members who want IP privacy beyond what the operator can offer, t
 
 ### 9.2 v1.5 (months 5–8)
 
-- Radio chirps (custom WAV/MP3/OGG/FLAC, loaded from local folder, mirroring Star Comms).
+Items marked ✓ were promoted to v1 and shipped in Plan 6 (2026-05-28 polish bundle).
+
+- ✓ Radio chirps (custom WAV/MP3/OGG/FLAC, loaded from local folder, mirroring Star Comms). **Shipped in Plan 6.**
 - Focused-app PTT (Win32 focus detection + X11/Wayland focus detection).
 - Priority ducking polish (configurable curves, hangover tuning, per-net overrides).
 - Voice activity / open-mic mode for designated nets.
 - Screen sharing UI exposure (LiveKit supports it; we just expose it).
-- QR code device verification (alongside SAS).
+- ✓ QR code device verification (alongside SAS). **Shipped in Plan 6.**
+- ✓ Drag-to-reorder server sidebar. **Shipped in Plan 6.**
+- ✓ System tray with minimize-to-tray. **Shipped in Plan 6.**
+- ✓ OS-level desktop notifications (per-server toggle). **Shipped in Plan 6.**
 - **Net Bridges** — client-side audio relay between two nets the operator is a member of (§5.6). Enables multi-guild alliance coordination without re-enabling federation.
 - UI polish, theme support.
 

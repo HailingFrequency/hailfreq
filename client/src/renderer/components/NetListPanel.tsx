@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
 import type { NetPreferences, ServerEntry } from "@shared/types";
+import type { ChirpSummary } from "@shared/ipc";
 import { listNets, subscribeToNetsChanges, type NetSummary } from "../matrix/nets";
 import { NetRow } from "./NetRow";
 import { VoiceEngine } from "../voice/VoiceEngine";
@@ -12,6 +13,9 @@ interface NetListPanelProps {
   onTransmittingChange: (net: string | null) => void;
 }
 
+const DEFAULT_OUTBOUND_CHIRP = "builtin:click";
+const DEFAULT_INBOUND_CHIRP = "builtin:classic-two-tone";
+
 interface PerNetUiState {
   monitored: boolean;
   volume: number;
@@ -20,6 +24,8 @@ interface PerNetUiState {
   keybind: string | null;
   voiceThresholdDb: number;
   keybindError: string | null;
+  outboundChirp: string;
+  inboundChirp: string;
 }
 
 function defaultUi(): PerNetUiState {
@@ -31,6 +37,8 @@ function defaultUi(): PerNetUiState {
     keybind: null,
     voiceThresholdDb: -45,
     keybindError: null,
+    outboundChirp: DEFAULT_OUTBOUND_CHIRP,
+    inboundChirp: DEFAULT_INBOUND_CHIRP,
   };
 }
 
@@ -48,6 +56,8 @@ function initialUiForNet(
     pttMode: (voicePrefs.pttModes[matrixRoomId] as PttMode | undefined) ?? base.pttMode,
     voiceThresholdDb: voicePrefs.voiceThresholds[matrixRoomId] ?? base.voiceThresholdDb,
     monitored: voicePrefs.monitored.includes(matrixRoomId),
+    outboundChirp: (voicePrefs.outboundChirps ?? {})[matrixRoomId] ?? base.outboundChirp,
+    inboundChirp: (voicePrefs.inboundChirps ?? {})[matrixRoomId] ?? base.inboundChirp,
   };
 }
 
@@ -59,6 +69,8 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
     pttModes: {},
     voiceThresholds: {},
     monitored: [],
+    outboundChirps: {},
+    inboundChirps: {},
   };
   for (const [roomId, ui] of uiState) {
     prefs.volumes[roomId] = ui.volume;
@@ -66,6 +78,8 @@ function buildNetPreferences(uiState: Map<string, PerNetUiState>): NetPreference
     prefs.pttModes[roomId] = ui.pttMode;
     prefs.voiceThresholds[roomId] = ui.voiceThresholdDb;
     if (ui.monitored) prefs.monitored.push(roomId);
+    prefs.outboundChirps[roomId] = ui.outboundChirp;
+    prefs.inboundChirps[roomId] = ui.inboundChirp;
   }
   return prefs;
 }
@@ -76,6 +90,7 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
   const [engine] = useState(() => new VoiceEngine(client));
   const [ptt] = useState(() => new PttController(engine));
   const [transmitting, setTransmitting] = useState<string | null>(null);
+  const [availableChirps, setAvailableChirps] = useState<ChirpSummary[]>([]);
 
   // Expose the VoiceEngine for Plan 4/5 E2E tests when running under HAILFREQ_TEST=1.
   // This lets Playwright's page.evaluate() reach the engine without requiring a real UI action.
@@ -108,6 +123,14 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
     },
     [serverEntry.id],
   );
+
+  // Fetch available chirps once on mount
+  useEffect(() => {
+    void window.hailfreq
+      .invoke("chirps:list")
+      .then((chirps) => setAvailableChirps(chirps))
+      .catch((err: unknown) => console.error("Failed to list chirps:", err));
+  }, []);
 
   // Refresh net list on Matrix changes
   useEffect(() => {
@@ -174,6 +197,12 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
         return next;
       });
     } else {
+      // Push chirp selection into the engine before monitoring so the first PTT
+      // uses the correct chirp IDs.
+      engine.setChirps(net.matrixRoomId, {
+        inbound: current.inboundChirp,
+        outbound: current.outboundChirp,
+      });
       await engine.monitorNet({
         matrixRoomId: net.matrixRoomId,
         priority: net.properties.priority,
@@ -185,6 +214,29 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
         return next;
       });
     }
+  }
+
+  function handleChirpChange(
+    matrixRoomId: string,
+    kind: "inbound" | "outbound",
+    chirpId: string,
+  ): void {
+    setUiState((m) => {
+      const next = new Map(m);
+      const existing = next.get(matrixRoomId) ?? defaultUi();
+      const updated: PerNetUiState =
+        kind === "inbound"
+          ? { ...existing, inboundChirp: chirpId }
+          : { ...existing, outboundChirp: chirpId };
+      next.set(matrixRoomId, updated);
+      // Update the engine in real-time so changes take effect without re-monitoring
+      engine.setChirps(matrixRoomId, {
+        inbound: updated.inboundChirp,
+        outbound: updated.outboundChirp,
+      });
+      persistPrefs(next);
+      return next;
+    });
   }
 
   function handleVolume(matrixRoomId: string, volume: number) {
@@ -300,12 +352,17 @@ export function NetListPanel({ client, serverEntry, onTransmittingChange }: NetL
             keybind={ui.keybind}
             keybindError={ui.keybindError}
             voiceThresholdDb={ui.voiceThresholdDb}
+            outboundChirp={ui.outboundChirp}
+            inboundChirp={ui.inboundChirp}
+            availableChirps={availableChirps}
             onToggleMonitor={() => void handleToggleMonitor(net)}
             onVolumeChange={(v) => handleVolume(net.matrixRoomId, v)}
             onPttModeChange={(mode) => void handlePttModeChange(net.matrixRoomId, mode)}
             onKeybindChange={(a) => void handleKeybindChange(net.matrixRoomId, a)}
             onKeybindClear={() => void handleKeybindClear(net.matrixRoomId)}
             onVoiceThresholdChange={(db) => void handleVoiceThresholdChange(net.matrixRoomId, db)}
+            onOutboundChirpChange={(id) => handleChirpChange(net.matrixRoomId, "outbound", id)}
+            onInboundChirpChange={(id) => handleChirpChange(net.matrixRoomId, "inbound", id)}
           />
         );
       })}

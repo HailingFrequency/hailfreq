@@ -7,15 +7,22 @@ interface ServerIconProps {
   onContextMenu?: (e: React.MouseEvent) => void;
   unreadCount?: number;
   transmitting?: boolean;
+  onDragStart?: (e: React.DragEvent<HTMLButtonElement>) => void;
 }
 
-export function ServerIcon({ server, active, onClick, onContextMenu, unreadCount, transmitting }: ServerIconProps) {
+export function ServerIcon({ server, active, onClick, onContextMenu, unreadCount, transmitting, onDragStart }: ServerIconProps) {
   const initial = (server.label.trim()[0] ?? server.serverUrl[0] ?? "?").toUpperCase();
   const badgeLabel = unreadCount != null && unreadCount > 99 ? "99+" : String(unreadCount ?? 0);
   const showBadge = unreadCount != null && unreadCount > 0;
 
   return (
     <button
+      draggable={true}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", server.id);
+        onDragStart?.(e);
+      }}
       onClick={onClick}
       onContextMenu={(e) => {
         e.preventDefault();

@@ -47,7 +47,16 @@ export function migrateLegacyShape(raw: unknown): Settings {
       userId: typed.userId ?? "",
       lastLoginMethod: typed.lastLoginMethod ?? "",
       lastSyncedMs: 0,
-      voicePrefs: { volumes: {}, keybinds: {}, pttModes: {}, voiceThresholds: {}, monitored: [] },
+      notificationsEnabled: true,
+      voicePrefs: {
+        volumes: {},
+        keybinds: {},
+        pttModes: {},
+        voiceThresholds: {},
+        monitored: [],
+        outboundChirps: {},
+        inboundChirps: {},
+      },
     };
     return {
       servers: [entry],
@@ -93,7 +102,16 @@ export function addServer(label: string, serverUrl: string): ServerEntry {
     userId: "",
     lastLoginMethod: "",
     lastSyncedMs: 0,
-    voicePrefs: { volumes: {}, keybinds: {}, pttModes: {}, voiceThresholds: {}, monitored: [] },
+    notificationsEnabled: true,
+    voicePrefs: {
+      volumes: {},
+      keybinds: {},
+      pttModes: {},
+      voiceThresholds: {},
+      monitored: [],
+      outboundChirps: {},
+      inboundChirps: {},
+    },
   };
   const servers = settings.get("servers");
   settings.set("servers", [...servers, entry]);
@@ -128,4 +146,25 @@ export function updateServer(serverId: string, patch: Partial<ServerEntry>): Ser
   next[idx] = updated;
   settings.set("servers", next);
   return updated;
+}
+
+/**
+ * Pure function: reorder a list of ServerEntry objects according to the given ID ordering.
+ * IDs not present in `orderedIds` are appended at the end (safety net).
+ * Exported for unit testing.
+ */
+export function reorderServerList(servers: ServerEntry[], orderedIds: string[]): ServerEntry[] {
+  const byId = new Map(servers.map((s) => [s.id, s]));
+  const reordered = orderedIds.map((id) => byId.get(id)).filter((s): s is ServerEntry => !!s);
+  // Append any servers not present in orderedIds (safety net)
+  for (const s of servers) {
+    if (!orderedIds.includes(s.id)) reordered.push(s);
+  }
+  return reordered;
+}
+
+export function reorderServers(orderedIds: string[]): void {
+  const servers = settings.get("servers");
+  const reordered = reorderServerList(servers, orderedIds);
+  settings.set("servers", reordered);
 }

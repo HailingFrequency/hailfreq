@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useState, type ReactNode, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, useCallback } from "react";
 import type { ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
 import { startClient } from "./matrix/client";
-import { subscribeToVerificationRequests } from "./matrix/verification";
+import { subscribeToVerificationRequests, availableMethods } from "./matrix/verification";
+import type { VerificationMethodChoice } from "./matrix/verification";
 import { RoomEvent } from "matrix-js-sdk";
 import type { MatrixEvent, Room } from "matrix-js-sdk";
 import type { IRoomTimelineData } from "matrix-js-sdk/lib/models/event-timeline-set";
 import { Sidebar } from "./components/Sidebar";
 import { EmojiVerification } from "./components/EmojiVerification";
+import { QrVerification } from "./components/QrVerification";
+import type { QrMode } from "./components/QrVerification";
 import { AddServer } from "./screens/AddServer";
 import { Login } from "./screens/Login";
 import { EncryptionSetup } from "./screens/EncryptionSetup";
@@ -30,8 +33,15 @@ interface ServerInstance {
     | { kind: "encryption-setup"; password: string | null }
     | { kind: "restore-from-recovery" }
     | { kind: "home" };
-  /** Non-null when an incoming SAS verification request is waiting to be handled. */
+  /** Non-null when an incoming verification request is waiting to be handled. */
   pendingVerification?: VerificationRequest;
+  /**
+   * Which verification method the user has chosen.
+   * - undefined: not yet chosen (show picker if multiple methods available)
+   * - "sas": emoji comparison via EmojiVerification
+   * - "qr-show" | "qr-scan": QR code via QrVerification
+   */
+  chosenVerificationMethod?: VerificationMethodChoice;
   /** Unread message count for this server while it is not the active server. */
   unreadCount: number;
 }
@@ -203,8 +213,12 @@ export function AppState() {
   }, [signedInClients]);
 
   // -------------------------------------------------------------------------
-  // Per-server unread badge subscriptions
+  // Per-server unread badge subscriptions + OS notifications
   // -------------------------------------------------------------------------
+
+  // Per-server notification debounce: track last-notified timestamp per server
+  const lastNotifiedRef = useRef<Map<string, number>>(new Map());
+  const NOTIFY_DEBOUNCE_MS = 5000;
 
   useEffect(() => {
     const unsubs: Array<() => void> = [];
@@ -230,14 +244,46 @@ export function AppState() {
         if (localUserId && event.getSender() === localUserId) return;
 
         setState((prev) => {
-          // Skip if the user is currently viewing this server
-          if (prev.activeServerId === serverId) return prev;
+          // Increment unread if this server is not active
+          if (prev.activeServerId !== serverId) {
+            const existing = prev.servers.get(serverId);
+            if (!existing) return prev;
+            const next = new Map(prev.servers);
+            next.set(serverId, { ...existing, unreadCount: existing.unreadCount + 1 });
+            return { ...prev, servers: next };
+          }
+          return prev;
+        });
 
+        // OS notification: fire when this server is not active OR window not focused,
+        // gated on per-server notificationsEnabled and debounce.
+        setState((prev) => {
           const existing = prev.servers.get(serverId);
           if (!existing) return prev;
-          const next = new Map(prev.servers);
-          next.set(serverId, { ...existing, unreadCount: existing.unreadCount + 1 });
-          return { ...prev, servers: next };
+
+          // Per-server notifications toggle (default true)
+          const notifEnabled = existing.entry.notificationsEnabled ?? true;
+          if (!notifEnabled) return prev;
+
+          // Only notify if server is not active or window not focused
+          const isActiveServer = prev.activeServerId === serverId;
+          const windowFocused = document.hasFocus();
+          if (isActiveServer && windowFocused) return prev;
+
+          // Debounce: cap at 1 notification per server per 5 seconds
+          const now = Date.now();
+          const lastTime = lastNotifiedRef.current.get(serverId) ?? 0;
+          if (now - lastTime < NOTIFY_DEBOUNCE_MS) return prev;
+          lastNotifiedRef.current.set(serverId, now);
+
+          const serverLabel = existing.entry.label || existing.entry.serverUrl;
+          void window.hailfreq
+            .invoke("notify:show", { title: serverLabel, body: "New message", serverId })
+            .catch((err: unknown) => {
+              console.error("notify:show failed:", err);
+            });
+
+          return prev;
         });
       };
 
@@ -279,6 +325,15 @@ export function AppState() {
       return { ...s, servers, activeServerId: id, globalScreen: { kind: "active" } };
     });
   }, []);
+
+  // Subscribe to notify:clicked to switch active server when notification is clicked
+  useEffect(() => {
+    const unsub = window.hailfreq.onNotifyClicked((payload: { serverId?: string }) => {
+      if (!payload.serverId) return;
+      handleSelectServer(payload.serverId);
+    });
+    return unsub;
+  }, [handleSelectServer]);
 
   const handleAddClicked = useCallback(() => {
     setState((s) => ({ ...s, globalScreen: { kind: "adding-server" } }));
@@ -355,8 +410,20 @@ export function AppState() {
   );
 
   const makeVerificationDoneHandler = useCallback(
-    (serverId: string) => () => {
-      setState((s) => patchServer(s, serverId, { pendingVerification: undefined }));
+    (serverId: string) => (_verified?: boolean) => {
+      setState((s) =>
+        patchServer(s, serverId, {
+          pendingVerification: undefined,
+          chosenVerificationMethod: undefined,
+        }),
+      );
+    },
+    [],
+  );
+
+  const makeVerificationMethodChosenHandler = useCallback(
+    (serverId: string) => (method: VerificationMethodChoice) => {
+      setState((s) => patchServer(s, serverId, { chosenVerificationMethod: method }));
     },
     [],
   );
@@ -450,6 +517,43 @@ export function AppState() {
     setState((s) => ({ ...s, transmittingNet: net }));
   }, []);
 
+  const handleReorder = useCallback((orderedIds: string[]) => {
+    // Persist new order to store
+    void window.hailfreq.invoke("servers:reorder", { orderedIds }).catch((err: unknown) => {
+      console.error("servers:reorder failed:", err);
+    });
+    // Update local state: rebuild Map in the new order
+    setState((s) => {
+      const next = new Map<string, ServerInstance>();
+      for (const id of orderedIds) {
+        const instance = s.servers.get(id);
+        if (instance) next.set(id, instance);
+      }
+      // Append any servers not in orderedIds (safety net)
+      for (const [id, instance] of s.servers) {
+        if (!next.has(id)) next.set(id, instance);
+      }
+      return { ...s, servers: next };
+    });
+  }, []);
+
+  const handleToggleNotifications = useCallback(
+    async (serverId: string, enabled: boolean) => {
+      await window.hailfreq.invoke("servers:update", {
+        serverId,
+        patch: { notificationsEnabled: enabled },
+      });
+      setState((s) => {
+        const existing = s.servers.get(serverId);
+        if (!existing) return s;
+        return patchServer(s, serverId, {
+          entry: { ...existing.entry, notificationsEnabled: enabled },
+        });
+      });
+    },
+    [],
+  );
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -485,6 +589,8 @@ export function AppState() {
         onAddClicked={handleAddClicked}
         onRemoveServer={handleRemoveServer}
         onRenameServer={handleRenameServer}
+        onToggleNotifications={handleToggleNotifications}
+        onReorder={handleReorder}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (
@@ -502,6 +608,7 @@ export function AppState() {
             onRestored={makeRestoredHandler(activeInstance.entry.id)}
             onLogout={makeLogoutHandler(activeInstance.entry.id, activeInstance.handle)}
             onVerificationDone={makeVerificationDoneHandler(activeInstance.entry.id)}
+            onVerificationMethodChosen={makeVerificationMethodChosenHandler(activeInstance.entry.id)}
             onTransmittingChange={handleTransmittingChange}
           />
         ) : (
@@ -523,7 +630,8 @@ interface ActiveServerViewProps {
   onNeedsExistingRecovery: () => void;
   onRestored: () => void;
   onLogout: () => Promise<void>;
-  onVerificationDone: () => void;
+  onVerificationDone: (verified?: boolean) => void;
+  onVerificationMethodChosen: (method: VerificationMethodChoice) => void;
   onTransmittingChange: (net: string | null) => void;
 }
 
@@ -535,14 +643,66 @@ function ActiveServerView({
   onRestored,
   onLogout,
   onVerificationDone,
+  onVerificationMethodChosen,
   onTransmittingChange,
 }: ActiveServerViewProps) {
-  const { screen, entry, handle, pendingVerification } = instance;
+  const { screen, entry, handle, pendingVerification, chosenVerificationMethod } = instance;
 
-  // If an incoming verification request is pending, render the overlay
+  // Expose the Matrix ClientHandle for Plan 6+ E2E tests when running under HAILFREQ_TEST=1.
+  // Mirrors the window.__voiceEngine pattern in NetListPanel.
+  useEffect(() => {
+    if (process.env.HAILFREQ_TEST === "1") {
+      (window as any).__matrixHandle = handle;
+    }
+    return () => {
+      if (process.env.HAILFREQ_TEST === "1") {
+        delete (window as any).__matrixHandle;
+      }
+    };
+  }, [handle]);
+
+  // If an incoming verification request is pending, render the verification overlay
   // regardless of which screen the server is on (it will be on "home" for
   // signed-in servers, but be defensive).
   if (pendingVerification != null) {
+    const methods = availableMethods(pendingVerification);
+
+    // If only SAS is available (or no QR methods), route directly to EmojiVerification.
+    const hasQr = methods.includes("qr-show") || methods.includes("qr-scan");
+
+    // If a method has already been chosen, route to the appropriate component.
+    if (chosenVerificationMethod === "sas" || (!hasQr && methods.includes("sas"))) {
+      return (
+        <EmojiVerification
+          request={pendingVerification}
+          onDone={onVerificationDone}
+        />
+      );
+    }
+
+    if (chosenVerificationMethod === "qr-show" || chosenVerificationMethod === "qr-scan") {
+      return (
+        <QrVerification
+          request={pendingVerification}
+          mode={chosenVerificationMethod as QrMode}
+          onDone={onVerificationDone}
+        />
+      );
+    }
+
+    // No method chosen yet + QR is available → show the picker.
+    if (hasQr) {
+      return (
+        <VerificationMethodPicker
+          methods={methods}
+          request={pendingVerification}
+          onChoose={onVerificationMethodChosen}
+          onCancel={() => onVerificationDone(false)}
+        />
+      );
+    }
+
+    // Fallback: no methods at all or SAS only with no prior choice.
     return (
       <EmojiVerification
         request={pendingVerification}
@@ -592,6 +752,75 @@ function ActiveServerView({
       );
 
   }
+}
+
+// ---------------------------------------------------------------------------
+// Verification method picker
+// ---------------------------------------------------------------------------
+
+interface VerificationMethodPickerProps {
+  methods: VerificationMethodChoice[];
+  request: VerificationRequest;
+  onChoose: (method: VerificationMethodChoice) => void;
+  onCancel: () => void;
+}
+
+function VerificationMethodPicker({
+  methods,
+  request,
+  onChoose,
+  onCancel,
+}: VerificationMethodPickerProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="w-full max-w-sm rounded-xl bg-slate-800 p-6 shadow-2xl">
+        <h2 className="mb-1 text-lg font-semibold text-white">Verify Device</h2>
+        <p className="mb-4 text-sm text-slate-400">
+          From:{" "}
+          <span className="font-mono text-slate-300">
+            {request.otherUserId}
+            {request.otherDeviceId ? ` / ${request.otherDeviceId}` : ""}
+          </span>
+        </p>
+        <p className="mb-4 text-sm text-slate-300">Choose a verification method:</p>
+        <div className="flex flex-col gap-2">
+          {methods.includes("sas") && (
+            <button
+              onClick={() => onChoose("sas")}
+              className="rounded-lg bg-slate-700 px-4 py-3 text-left text-sm text-white hover:bg-slate-600"
+            >
+              <span className="font-semibold">Compare emoji</span>
+              <span className="ml-2 text-slate-400">— both devices show matching emoji</span>
+            </button>
+          )}
+          {methods.includes("qr-show") && (
+            <button
+              onClick={() => onChoose("qr-show")}
+              className="rounded-lg bg-slate-700 px-4 py-3 text-left text-sm text-white hover:bg-slate-600"
+            >
+              <span className="font-semibold">Show QR code</span>
+              <span className="ml-2 text-slate-400">— other device scans this QR</span>
+            </button>
+          )}
+          {methods.includes("qr-scan") && (
+            <button
+              onClick={() => onChoose("qr-scan")}
+              className="rounded-lg bg-slate-700 px-4 py-3 text-left text-sm text-white hover:bg-slate-600"
+            >
+              <span className="font-semibold">Paste QR code</span>
+              <span className="ml-2 text-slate-400">— paste the other device&apos;s QR payload</span>
+            </button>
+          )}
+        </div>
+        <button
+          onClick={onCancel}
+          className="mt-4 w-full rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-500"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------

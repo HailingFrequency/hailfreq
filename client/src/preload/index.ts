@@ -25,6 +25,11 @@ const api = {
       ipcRenderer.off("nativeHotkey:up", upHandler);
     };
   },
+  onNotifyClicked: (cb: (payload: { serverId?: string }) => void) => {
+    const handler = (_e: unknown, payload: { serverId?: string }) => cb(payload);
+    ipcRenderer.on("notify:clicked", handler);
+    return () => ipcRenderer.off("notify:clicked", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("hailfreq", api);

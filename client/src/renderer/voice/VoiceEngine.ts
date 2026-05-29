@@ -3,9 +3,13 @@ import { fetchLiveKitToken, authBaseUrlFromHomeserver } from "./auth";
 import { startKeyRotationCoordinator, type RotationHandle } from "./keyRotationCoordinator";
 import { fetchSframeKey } from "./sframeKeys";
 import { createLiveKitE2EEWorker } from "./e2eeWorker";
+import { loadChirp, playChirp } from "./chirpPlayer";
 import type { MatrixClient } from "matrix-js-sdk";
 import { ExternalE2EEKeyProvider } from "livekit-client";
 import type { RemoteAudioTrack, RemoteParticipant } from "livekit-client";
+
+/** Inbound silence debounce: only play inbound chirp if participant has been silent ≥ this long. */
+const INBOUND_CHIRP_DEBOUNCE_MS = 2000;
 
 interface NetState {
   matrixRoomId: string;
@@ -20,6 +24,12 @@ interface NetState {
   trackNodes: Map<string, MediaStreamAudioSourceNode>;
   /** Set of identities currently active-speaking. */
   activeSpeakers: Set<string>;
+  /**
+   * Per-participant last-went-silent timestamp (ms). Used by inbound chirp debounce:
+   * we only play the inbound chirp if the participant has been silent for ≥ INBOUND_CHIRP_DEBOUNCE_MS.
+   * When a participant first appears they are absent from this map (treated as "long-silent").
+   */
+  participantLastSilentMs: Map<string, number>;
 }
 
 export interface VoiceEngineEvents {
@@ -31,12 +41,24 @@ export interface VoiceEngineEvents {
 const DUCK_ATTENUATION_DB = -35; // matches Star Comms default
 const DUCK_HANGOVER_MS = 250;
 
+/** Per-net chirp configuration (IDs may be "builtin:none" to disable). */
+export interface NetChirps {
+  inbound: string;
+  outbound: string;
+}
+
 export class VoiceEngine {
   private readonly client: MatrixClient;
   private readonly authBaseUrl: string;
   private readonly nets = new Map<string, NetState>();
   private audioCtx: AudioContext | null = null;
   private outputGain: GainNode | null = null;
+  /**
+   * Dedicated gain node for chirp playback. Connected directly to outputGain
+   * (parallel to the volumeGain→duckGain chain) so chirps are never ducked by
+   * priority logic — they always play at full presence.
+   */
+  private chirpGain: GainNode | null = null;
   private listeners: Partial<VoiceEngineEvents> = {};
   /** The Matrix room ID currently being PTT'd into, or null when not transmitting. */
   private activePttNet: string | null = null;
@@ -48,6 +70,10 @@ export class VoiceEngine {
   private duckHangoverTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Handle to unsubscribe the SFrame key-rotation coordinator on shutdown. */
   private rotationHandle: RotationHandle | null = null;
+  /** Per-net chirp ID configuration. Keys are Matrix room IDs. */
+  private netChirps = new Map<string, NetChirps>();
+  /** Master chirp volume (applied in addition to per-play local gain in chirpPlayer). */
+  private chirpVolume = 0.7;
 
   constructor(client: MatrixClient) {
     this.client = client;
@@ -86,6 +112,26 @@ export class VoiceEngine {
     this.outputGain = this.audioCtx.createGain();
     this.outputGain.gain.value = 1.0;
     this.outputGain.connect(this.audioCtx.destination);
+    // chirpGain is wired directly to outputGain, bypassing the per-net
+    // volumeGain → duckGain chain. This means chirps are audible regardless
+    // of ducking state — a deliberate UX decision: PTT start/stop tones and
+    // inbound-keyed tones should always be clearly perceptible.
+    this.chirpGain = this.audioCtx.createGain();
+    this.chirpGain.gain.value = 1.0;
+    this.chirpGain.connect(this.outputGain);
+  }
+
+  /**
+   * Set the chirp IDs for a net. Call this after fetching user prefs, before
+   * monitoring or after updating the selection in the UI.
+   */
+  setChirps(matrixRoomId: string, chirps: NetChirps): void {
+    this.netChirps.set(matrixRoomId, { ...chirps });
+  }
+
+  /** Adjust the master chirp output volume (0.0–1.0). */
+  setChirpVolume(volume: number): void {
+    this.chirpVolume = Math.max(0, Math.min(1, volume));
   }
 
   /** Subscribe to a net's voice. Connects to LiveKit + sets up audio routing. */
@@ -128,6 +174,7 @@ export class VoiceEngine {
       duckGain,
       trackNodes: new Map(),
       activeSpeakers: new Set(),
+      participantLastSilentMs: new Map(),
     };
 
     connection
@@ -208,15 +255,34 @@ export class VoiceEngine {
     await state.connection.startMicPublishing(micTrack.clone());
     this.activePttNet = matrixRoomId;
     this.listeners.pttStateChanged?.(matrixRoomId);
+
+    // Play outbound chirp locally (not transmitted — we publish only the mic track)
+    const outboundId = this.netChirps.get(matrixRoomId)?.outbound ?? "builtin:click";
+    void this.playNetChirp(outboundId);
   }
 
   /** Release PTT — stop transmitting. */
   async stopPtt(): Promise<void> {
     if (!this.activePttNet) return;
-    const state = this.nets.get(this.activePttNet);
+    const net = this.activePttNet;
+    const state = this.nets.get(net);
     if (state) await state.connection.stopMicPublishing();
     this.activePttNet = null;
     this.listeners.pttStateChanged?.(null);
+
+    // Play end-of-transmission click (always the built-in click, regardless of outbound selection)
+    void this.playNetChirp("builtin:click");
+  }
+
+  /** Load and play a chirp ID through the dedicated chirp gain node. Errors are swallowed — chirp failures must not interrupt voice. */
+  private async playNetChirp(id: string): Promise<void> {
+    if (!this.audioCtx || !this.chirpGain) return;
+    try {
+      const buffer = await loadChirp(this.audioCtx, id);
+      if (buffer) playChirp(this.audioCtx, buffer, this.chirpGain, this.chirpVolume);
+    } catch (err) {
+      console.error("[VoiceEngine] chirp playback error:", err);
+    }
   }
 
   /**
@@ -259,6 +325,10 @@ export class VoiceEngine {
       this.micStream.getTracks().forEach((t) => t.stop());
       this.micStream = null;
     }
+    if (this.chirpGain) {
+      this.chirpGain.disconnect();
+      this.chirpGain = null;
+    }
     if (this.audioCtx) {
       await this.audioCtx.close();
       this.audioCtx = null;
@@ -270,13 +340,26 @@ export class VoiceEngine {
 
   // --- Internals ---
 
-  private handleTrackSubscribed(state: NetState, track: RemoteAudioTrack, _participant: RemoteParticipant): void {
+  private handleTrackSubscribed(state: NetState, track: RemoteAudioTrack, participant: RemoteParticipant): void {
     if (!this.audioCtx) return;
     if (!track.sid) return; // sid is undefined for unpublished tracks; skip
     const stream = new MediaStream([track.mediaStreamTrack]);
     const source = this.audioCtx.createMediaStreamSource(stream);
     source.connect(state.volumeGain);
     state.trackNodes.set(track.sid, source);
+
+    // Inbound chirp debounce: only play the inbound tone if this participant has
+    // been silent for at least INBOUND_CHIRP_DEBOUNCE_MS. New participants (not yet
+    // in the map) are treated as "long-silent" so their first transmission triggers
+    // the chirp. This prevents spamming the tone on brief reconnects.
+    const identity = participant.identity;
+    const lastSilentMs = state.participantLastSilentMs.get(identity);
+    const silentDurationMs =
+      lastSilentMs !== undefined ? Date.now() - lastSilentMs : Infinity;
+    if (silentDurationMs >= INBOUND_CHIRP_DEBOUNCE_MS) {
+      const inboundId = this.netChirps.get(state.matrixRoomId)?.inbound ?? "builtin:classic-two-tone";
+      void this.playNetChirp(inboundId);
+    }
   }
 
   private handleTrackUnsubscribed(state: NetState, track: RemoteAudioTrack, _participant: RemoteParticipant): void {
@@ -289,7 +372,14 @@ export class VoiceEngine {
   }
 
   private handleActiveSpeakersChanged(state: NetState, identities: string[]): void {
-    state.activeSpeakers = new Set(identities);
+    const newActive = new Set(identities);
+    // Record silence timestamp for any participant that just stopped speaking
+    for (const identity of state.activeSpeakers) {
+      if (!newActive.has(identity)) {
+        state.participantLastSilentMs.set(identity, Date.now());
+      }
+    }
+    state.activeSpeakers = newActive;
     this.listeners.activeSpeakersChanged?.(state.matrixRoomId, identities);
     this.recomputeDucking();
   }

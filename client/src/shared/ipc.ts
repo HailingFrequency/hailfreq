@@ -1,5 +1,11 @@
 import type { Settings, ServerEntry } from "./types";
 
+export interface ChirpSummary {
+  id: string;
+  name: string;
+  source: "builtin" | "custom";
+}
+
 export interface StoredCredentials {
   userId: string;
   accessToken: string;
@@ -17,6 +23,9 @@ export interface IpcChannels {
   "servers:remove": { args: [{ serverId: string }]; result: void };
   "servers:setActive": { args: [{ serverId: string }]; result: void };
   "servers:update": { args: [{ serverId: string; patch: Partial<ServerEntry> }]; result: ServerEntry };
+  "servers:reorder": { args: [{ orderedIds: string[] }]; result: void };
+  "notify:show": { args: [{ title: string; body: string; serverId?: string }]; result: void };
+  "app:windowFocused": { args: []; result: boolean };
   "tokens:save": { args: [{ serverId: string; credentials: StoredCredentials }]; result: void };
   "tokens:load": { args: [{ serverId: string }]; result: StoredCredentials | null };
   "tokens:clear": { args: [{ serverId: string }]; result: void };
@@ -35,6 +44,9 @@ export interface IpcChannels {
     result: { id: string } | { error: string };
   };
   "nativeHotkey:unregisterHold": { args: [{ id: string }]; result: void };
+  "chirps:list": { args: []; result: ChirpSummary[] };
+  "chirps:read": { args: [{ id: string }]; result: Uint8Array };
+  "chirps:openFolder": { args: []; result: string };
 }
 
 export type IpcChannelName = keyof IpcChannels;
