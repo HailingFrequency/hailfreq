@@ -68,8 +68,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("chirps:openFolder", () => openChirpFolder());
 
   ipcMain.handle("notify:show", (_event, opts: NotifyOptions): void => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
-    showNotification(opts, () => win);
+    showNotification(opts, () => BrowserWindow.getAllWindows()[0] ?? null);
   });
 
   ipcMain.handle("app:windowFocused", (): boolean => {
