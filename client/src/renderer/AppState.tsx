@@ -6,7 +6,7 @@ import { startClient } from "./matrix/client";
 import { subscribeToVerificationRequests, availableMethods } from "./matrix/verification";
 import type { VerificationMethodChoice } from "./matrix/verification";
 import { RoomEvent } from "matrix-js-sdk";
-import type { MatrixEvent, Room } from "matrix-js-sdk";
+import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 import type { IRoomTimelineData } from "matrix-js-sdk/lib/models/event-timeline-set";
 import { Sidebar } from "./components/Sidebar";
 import { EmojiVerification } from "./components/EmojiVerification";
@@ -1163,7 +1163,7 @@ interface ActiveServerViewProps {
   bridgeRunnerStatuses: Map<string, { forward: BridgeRunnerStatus; reverse: BridgeRunnerStatus | null }>;
   onSaveBridges: (bridges: BridgeConfig[]) => Promise<void>;
   /** All signed-in servers for the BridgeEditor endpoint selectors. */
-  serversForEditor: Map<string, { label: string; client: import("matrix-js-sdk").MatrixClient }>;
+  serversForEditor: Map<string, { label: string; client: MatrixClient }>;
 }
 
 function ActiveServerView({
