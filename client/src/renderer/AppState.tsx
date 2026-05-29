@@ -19,6 +19,7 @@ import { RestoreFromRecoveryKey } from "./screens/RestoreFromRecoveryKey";
 import { Home } from "./screens/Home";
 import type { Credentials } from "./matrix/types";
 import type { VerificationRequest } from "matrix-js-sdk/lib/crypto-api/verification";
+import type { CrewBoardingToastEntry } from "./components/CrewBoardingToast";
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -44,6 +45,11 @@ interface ServerInstance {
   chosenVerificationMethod?: VerificationMethodChoice;
   /** Unread message count for this server while it is not the active server. */
   unreadCount: number;
+  /**
+   * Pending crew-boarding toasts for this server (max 3 at a time).
+   * Produced by ScIntegration (Task 11); consumed and dismissed by Home.
+   */
+  crewBoardingToasts: CrewBoardingToastEntry[];
 }
 
 interface AppLevelState {
@@ -92,7 +98,7 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
           deviceId: stored.deviceId,
           homeserverUrl: stored.homeserverUrl,
         });
-        return { entry, handle, screen: { kind: "home" }, unreadCount: 0 };
+        return { entry, handle, screen: { kind: "home" }, unreadCount: 0, crewBoardingToasts: [] };
       }
     } catch {
       // Token expired, homeserver unreachable, or crypto init failed — fall through to login
@@ -100,7 +106,7 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
     // Clear stale/invalid credentials
     await window.hailfreq.invoke("tokens:clear", { serverId: entry.id });
   }
-  return { entry, screen: { kind: "login" }, unreadCount: 0 };
+  return { entry, screen: { kind: "login" }, unreadCount: 0, crewBoardingToasts: [] };
 }
 
 async function validateAccessToken(homeserverUrl: string, accessToken: string): Promise<boolean> {
@@ -517,6 +523,25 @@ export function AppState() {
     setState((s) => ({ ...s, transmittingNet: net }));
   }, []);
 
+  /**
+   * Dismiss a single crew-boarding toast by id for a given server.
+   * Called by Home when the user picks Invite / Always-invite / Ignore,
+   * or when the auto-dismiss timer fires.
+   * Task 11 will add the producer side (pushing toasts into this queue).
+   */
+  const makeDismissCrewBoardingToast = useCallback(
+    (serverId: string) => (toastId: string) => {
+      setState((s) => {
+        const existing = s.servers.get(serverId);
+        if (!existing) return s;
+        return patchServer(s, serverId, {
+          crewBoardingToasts: existing.crewBoardingToasts.filter((t) => t.id !== toastId),
+        });
+      });
+    },
+    [],
+  );
+
   const handleReorder = useCallback((orderedIds: string[]) => {
     // Persist new order to store
     void window.hailfreq.invoke("servers:reorder", { orderedIds }).catch((err: unknown) => {
@@ -610,6 +635,7 @@ export function AppState() {
             onVerificationDone={makeVerificationDoneHandler(activeInstance.entry.id)}
             onVerificationMethodChosen={makeVerificationMethodChosenHandler(activeInstance.entry.id)}
             onTransmittingChange={handleTransmittingChange}
+            onDismissCrewBoardingToast={makeDismissCrewBoardingToast(activeInstance.entry.id)}
           />
         ) : (
           <Centered>No server selected.</Centered>
@@ -633,6 +659,7 @@ interface ActiveServerViewProps {
   onVerificationDone: (verified?: boolean) => void;
   onVerificationMethodChosen: (method: VerificationMethodChoice) => void;
   onTransmittingChange: (net: string | null) => void;
+  onDismissCrewBoardingToast: (toastId: string) => void;
 }
 
 function ActiveServerView({
@@ -645,8 +672,9 @@ function ActiveServerView({
   onVerificationDone,
   onVerificationMethodChosen,
   onTransmittingChange,
+  onDismissCrewBoardingToast,
 }: ActiveServerViewProps) {
-  const { screen, entry, handle, pendingVerification, chosenVerificationMethod } = instance;
+  const { screen, entry, handle, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
 
   // Expose the Matrix ClientHandle for Plan 6+ E2E tests when running under HAILFREQ_TEST=1.
   // Mirrors the window.__voiceEngine pattern in NetListPanel.
@@ -748,6 +776,8 @@ function ActiveServerView({
           onLogout={onLogout}
           serverEntry={entry}
           onTransmittingChange={onTransmittingChange}
+          crewBoardingToasts={crewBoardingToasts}
+          onDismissCrewBoardingToast={onDismissCrewBoardingToast}
         />
       );
 
