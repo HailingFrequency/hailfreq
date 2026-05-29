@@ -9,6 +9,7 @@ import { PttController, type PttMode } from "../voice/PttController";
 import type { ShareEngine } from "../share/ShareEngine";
 import type { ActiveShareSummary, LocalShareState } from "../share/types";
 import { SourcePickerModal } from "../share/SourcePickerModal";
+import { ShareViewerPane } from "../share/ShareViewerPane";
 import { acquireDisplayStream } from "../share/acquireDisplayStream";
 
 
@@ -545,16 +546,12 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
         <SourcePickerModal onPick={(selection) => void handlePickerResult(selection)} />
       )}
 
-      {/* Share viewer placeholder — Task 7 will replace this with ShareViewerPane */}
+      {/* Share viewer pane — opens when user clicks the 📺 viewer button on a net row */}
       {viewingShare && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/60"
-          onClick={() => setViewingShare(null)}
-        >
-          <div className="rounded border border-slate-700 bg-slate-900 p-6 text-slate-300">
-            Viewer coming soon
-          </div>
-        </div>
+        <ShareViewerPane
+          share={viewingShare}
+          onClose={() => setViewingShare(null)}
+        />
       )}
     </>
   );
