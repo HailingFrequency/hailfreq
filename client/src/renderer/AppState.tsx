@@ -1071,6 +1071,23 @@ export function AppState() {
   // "active" | "adding-server" — sidebar is always visible here
   const activeInstance = state.servers.get(state.activeServerId);
 
+  /**
+   * Build the servers map for the BridgeEditor endpoint selectors.
+   * Only includes servers that are signed in (have a handle + client).
+   * Derived inline (not memoized) since it re-renders whenever state.servers changes.
+   */
+  const serversForEditor = new Map(
+    Array.from(state.servers.entries())
+      .filter(([, inst]) => inst.handle != null)
+      .map(([id, inst]) => [
+        id,
+        {
+          label: inst.entry.label || inst.entry.serverUrl,
+          client: inst.handle!.client,
+        },
+      ]),
+  );
+
   return (
     <div className="flex h-full">
       <Sidebar
@@ -1115,6 +1132,7 @@ export function AppState() {
             bridges={state.bridges}
             bridgeRunnerStatuses={state.bridgeRunnerStatuses}
             onSaveBridges={handleSaveBridges}
+            serversForEditor={serversForEditor}
           />
         ) : (
           <Centered>No server selected.</Centered>
@@ -1144,6 +1162,8 @@ interface ActiveServerViewProps {
   bridges: BridgeConfig[];
   bridgeRunnerStatuses: Map<string, { forward: BridgeRunnerStatus; reverse: BridgeRunnerStatus | null }>;
   onSaveBridges: (bridges: BridgeConfig[]) => Promise<void>;
+  /** All signed-in servers for the BridgeEditor endpoint selectors. */
+  serversForEditor: Map<string, { label: string; client: import("matrix-js-sdk").MatrixClient }>;
 }
 
 function ActiveServerView({
@@ -1162,6 +1182,7 @@ function ActiveServerView({
   bridges,
   bridgeRunnerStatuses,
   onSaveBridges,
+  serversForEditor,
 }: ActiveServerViewProps) {
   const { screen, entry, handle, voiceEngine, shareEngine, activeShares, localShare, pendingVerification, chosenVerificationMethod, crewBoardingToasts } = instance;
 
@@ -1276,6 +1297,7 @@ function ActiveServerView({
           bridges={bridges}
           bridgeRunnerStatuses={bridgeRunnerStatuses}
           onSaveBridges={onSaveBridges}
+          serversForEditor={serversForEditor}
         />
       );
 

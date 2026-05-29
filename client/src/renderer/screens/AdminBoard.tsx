@@ -16,6 +16,7 @@ import { AdminDetail } from "../components/AdminDetail";
 import { UserSearchDialog } from "../components/UserSearchDialog";
 import { Button } from "../components/Button";
 import { BridgesPanel } from "./BridgesPanel";
+import { BridgeEditor } from "./BridgeEditor";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +32,8 @@ type EditorState =
 
 interface AdminBoardProps {
   client: MatrixClient;
+  /** All signed-in servers, keyed by serverId. Used by BridgeEditor for endpoint selection. */
+  servers: Map<string, { label: string; client: MatrixClient }>;
   bridges: BridgeConfig[];
   runnerStatuses: Map<string, { forward: BridgeRunnerStatus; reverse: BridgeRunnerStatus | null }>;
   onSaveBridges: (bridges: BridgeConfig[]) => Promise<void>;
@@ -43,6 +46,7 @@ interface AdminBoardProps {
 
 export function AdminBoard({
   client,
+  servers,
   bridges,
   runnerStatuses,
   onSaveBridges,
@@ -173,28 +177,35 @@ export function AdminBoard({
 
       {activeTab === "bridges" && (
         <div className="flex-1 overflow-auto">
-          {editorState.kind !== "closed" ? (
-            // Task 10 will replace this placeholder with <BridgeEditor />.
-            <div className="flex h-full items-center justify-center">
-              <div className="rounded border border-slate-700 bg-slate-900 p-6 text-center">
-                <p className="mb-2 text-sm font-semibold text-slate-200">
-                  {editorState.kind === "new" ? "New bridge" : `Edit: ${editorState.bridge.name}`}
-                </p>
-                <p className="mb-4 text-xs text-slate-500">
-                  Bridge editor (Task 10) — coming soon.
-                </p>
-                <Button variant="ghost" onClick={() => setEditorState({ kind: "closed" })}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <BridgesPanel
-              bridges={bridges}
-              runnerStatuses={runnerStatuses}
-              onSave={onSaveBridges}
-              onNew={() => setEditorState({ kind: "new" })}
-              onEdit={(bridge) => setEditorState({ kind: "edit", bridge })}
+          <BridgesPanel
+            bridges={bridges}
+            runnerStatuses={runnerStatuses}
+            onSave={onSaveBridges}
+            onNew={() => setEditorState({ kind: "new" })}
+            onEdit={(bridge) => setEditorState({ kind: "edit", bridge })}
+          />
+          {editorState.kind === "new" && (
+            <BridgeEditor
+              initial={null}
+              servers={servers}
+              onSave={async (bridge) => {
+                await onSaveBridges([...bridges, bridge]);
+                setEditorState({ kind: "closed" });
+              }}
+              onCancel={() => setEditorState({ kind: "closed" })}
+            />
+          )}
+          {editorState.kind === "edit" && (
+            <BridgeEditor
+              initial={editorState.bridge}
+              servers={servers}
+              onSave={async (bridge) => {
+                await onSaveBridges(
+                  bridges.map((b) => (b.id === bridge.id ? bridge : b)),
+                );
+                setEditorState({ kind: "closed" });
+              }}
+              onCancel={() => setEditorState({ kind: "closed" })}
             />
           )}
         </div>

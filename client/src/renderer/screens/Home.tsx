@@ -69,6 +69,11 @@ interface HomeProps {
   bridgeRunnerStatuses: Map<string, { forward: BridgeRunnerStatus; reverse: BridgeRunnerStatus | null }>;
   /** Save updated bridge configs. Forwarded to AdminBoard. */
   onSaveBridges: (bridges: BridgeConfig[]) => Promise<void>;
+  /**
+   * All signed-in servers, keyed by serverId. Forwarded to AdminBoard → BridgeEditor
+   * so the editor can populate server + net dropdowns.
+   */
+  serversForEditor: Map<string, { label: string; client: MatrixClient }>;
 }
 
 export function Home({
@@ -87,6 +92,7 @@ export function Home({
   bridges,
   bridgeRunnerStatuses,
   onSaveBridges,
+  serversForEditor,
 }: HomeProps) {
   const [creating, setCreating] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -141,6 +147,7 @@ export function Home({
     return (
       <AdminBoard
         client={client}
+        servers={serversForEditor}
         bridges={bridges}
         runnerStatuses={bridgeRunnerStatuses}
         onSaveBridges={onSaveBridges}
