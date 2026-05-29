@@ -37,6 +37,7 @@ export interface IpcChannels {
   "app:platform": { args: []; result: NodeJS.Platform };
   "settings:get": { args: []; result: Settings };
   "settings:setUi": { args: [Settings["ui"]]; result: Settings };
+  "settings:setScInstallPath": { args: [{ path: string | undefined }]; result: void };
   "servers:add": { args: [{ label: string; serverUrl: string }]; result: ServerEntry };
   "servers:remove": { args: [{ serverId: string }]; result: void };
   "servers:setActive": { args: [{ serverId: string }]; result: void };
@@ -67,6 +68,7 @@ export interface IpcChannels {
   "chirps:openFolder": { args: []; result: string };
   "sc:findInstall": { args: []; result: ScInstallCandidate[] };
   "sc:validatePath": { args: [{ path: string }]; result: boolean };
+  "sc:pickGameLog": { args: []; result: string | null };
   "sc:startWatch": { args: [{ gameLogPath: string }]; result: void };
   "sc:stopWatch": { args: []; result: void };
 }

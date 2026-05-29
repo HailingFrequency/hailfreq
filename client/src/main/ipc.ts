@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow } from "electron";
+import { app, ipcMain, BrowserWindow, dialog } from "electron";
 import path from "node:path";
 import { settings, addServer, removeServer, setActiveServer, updateServer, reorderServers } from "./store";
 import { saveCredentials, loadCredentials, clearCredentials, migrateLegacyCredentials } from "./tokens";
@@ -21,6 +21,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle("settings:setUi", (_event, ui: Settings["ui"]): Settings => {
     settings.set("ui", ui);
     return settings.store;
+  });
+  ipcMain.handle("settings:setScInstallPath", (_event, args: { path: string | undefined }): void => {
+    if (args.path === undefined) {
+      settings.delete("scInstallPath" as keyof Settings);
+    } else {
+      settings.set("scInstallPath", args.path);
+    }
   });
 
   ipcMain.handle("servers:add", (_event, args: { label: string; serverUrl: string }): ServerEntry =>
@@ -72,6 +79,20 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("sc:findInstall", () => findScInstallCandidates());
   ipcMain.handle("sc:validatePath", (_event, args: { path: string }) => validateGameLogPath(args.path));
+  ipcMain.handle("sc:pickGameLog", async (): Promise<string | null> => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
+    const result = await dialog.showOpenDialog(win!, {
+      title: "Select Star Citizen Game.log",
+      filters: [{ name: "Game.log", extensions: ["log"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const chosen = result.filePaths[0];
+    // Validate that the chosen file is actually named Game.log
+    const pathModule = await import("node:path");
+    if (pathModule.basename(chosen) !== "Game.log") return null;
+    return chosen;
+  });
   ipcMain.handle("sc:startWatch", async (_event, args: { gameLogPath: string }) => {
     if (typeof args.gameLogPath !== "string") throw new Error("gameLogPath must be a string");
     if (!path.isAbsolute(args.gameLogPath)) throw new Error("gameLogPath must be an absolute path");

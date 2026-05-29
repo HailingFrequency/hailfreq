@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
+import type { ScIntegrationSettings } from "@shared/types";
 import type { ServerEntry } from "@shared/types";
 import { ServerIcon } from "./ServerIcon";
 import { ServerContextMenu } from "./ServerContextMenu";
+import { ScIntegrationSettings as ScIntegrationSettingsPanel } from "../screens/ScIntegrationSettings";
 
 export interface SidebarServerItem {
   entry: ServerEntry;
@@ -17,7 +19,13 @@ interface SidebarProps {
   onRemoveServer: (serverId: string) => Promise<void>;
   onRenameServer: (serverId: string, newLabel: string) => Promise<void>;
   onToggleNotifications?: (serverId: string, enabled: boolean) => Promise<void>;
+  onSaveScIntegration?: (
+    serverId: string,
+    patch: { scIntegration: ScIntegrationSettings; scInstallPath: string | undefined },
+  ) => Promise<void>;
   onReorder?: (orderedIds: string[]) => void;
+  /** Global Game.log path (passed through from AppState for the SC panel). */
+  scInstallPath?: string;
 }
 
 export function Sidebar({
@@ -28,9 +36,12 @@ export function Sidebar({
   onRemoveServer,
   onRenameServer,
   onToggleNotifications,
+  onSaveScIntegration,
   onReorder,
+  scInstallPath,
 }: SidebarProps) {
   const [contextMenuFor, setContextMenuFor] = useState<ServerEntry | null>(null);
+  const [scIntegrationFor, setScIntegrationFor] = useState<ServerEntry | null>(null);
   // Track the server being dragged over for drop-target highlighting
   const dragOverIdRef = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -121,6 +132,23 @@ export function Sidebar({
               ? (enabled) => onToggleNotifications(contextMenuFor.id, enabled)
               : undefined
           }
+          onOpenScIntegration={
+            onSaveScIntegration
+              ? () => {
+                  setScIntegrationFor(contextMenuFor);
+                  setContextMenuFor(null);
+                }
+              : undefined
+          }
+        />
+      )}
+      {scIntegrationFor && onSaveScIntegration && (
+        <ScIntegrationSettingsPanel
+          serverId={scIntegrationFor.id}
+          scIntegration={scIntegrationFor.scIntegration}
+          scInstallPath={scInstallPath}
+          onSave={(patch) => onSaveScIntegration(scIntegrationFor.id, patch)}
+          onClose={() => setScIntegrationFor(null)}
         />
       )}
     </>

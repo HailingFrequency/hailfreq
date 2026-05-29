@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, useCallback } from "react";
-import type { ServerEntry } from "@shared/types";
+import type { ScIntegrationSettings, ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
 import { startClient } from "./matrix/client";
@@ -63,6 +63,8 @@ interface AppLevelState {
     | { kind: "adding-server" };
   /** The net ID currently being PTT'd on the active server (if any). */
   transmittingNet: string | null;
+  /** Global SC Game.log path. Loaded once at boot from settings. */
+  scInstallPath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +155,7 @@ export function AppState() {
       const globalScreen: AppLevelState["globalScreen"] =
         settings.servers.length === 0 ? { kind: "no-servers" } : { kind: "active" };
 
-      setState({ servers, activeServerId, globalScreen, transmittingNet: null });
+      setState({ servers, activeServerId, globalScreen, transmittingNet: null, scInstallPath: settings.scInstallPath });
     })();
 
     // Best-effort shutdown of all ClientHandles when the component unmounts.
@@ -579,6 +581,36 @@ export function AppState() {
     [],
   );
 
+  /**
+   * Save per-server SC integration settings and (optionally) the global
+   * scInstallPath. Called by the ScIntegrationSettings panel via Sidebar.
+   */
+  const handleSaveScIntegration = useCallback(
+    async (
+      serverId: string,
+      patch: { scIntegration: ScIntegrationSettings; scInstallPath: string | undefined },
+    ) => {
+      // Persist per-server integration settings
+      await window.hailfreq.invoke("servers:update", {
+        serverId,
+        patch: { scIntegration: patch.scIntegration },
+      });
+
+      // Persist the global scInstallPath (top-level Settings key)
+      await window.hailfreq.invoke("settings:setScInstallPath", { path: patch.scInstallPath });
+
+      setState((s) => {
+        const existing = s.servers.get(serverId);
+        if (!existing) return s;
+        const nextState = patchServer(s, serverId, {
+          entry: { ...existing.entry, scIntegration: patch.scIntegration },
+        });
+        return { ...nextState, scInstallPath: patch.scInstallPath };
+      });
+    },
+    [],
+  );
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -615,7 +647,9 @@ export function AppState() {
         onRemoveServer={handleRemoveServer}
         onRenameServer={handleRenameServer}
         onToggleNotifications={handleToggleNotifications}
+        onSaveScIntegration={handleSaveScIntegration}
         onReorder={handleReorder}
+        scInstallPath={state.scInstallPath}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (
