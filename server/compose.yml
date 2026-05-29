@@ -53,12 +53,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+      bootstrap:
+        condition: service_completed_successfully
+    entrypoint: ["/config/entrypoint.sh"]
+    configs:
+      - source: synapse_entrypoint
+        target: /config/entrypoint.sh
+        mode: 0755
+      - source: synapse_homeserver_yaml_template
+        target: /config/homeserver.yaml.template
+      - source: synapse_log_config
+        target: /config/log.config
     volumes:
       - synapse_data:/data
-      - ./synapse/homeserver.yaml:/data/homeserver.yaml:ro
-      - ./synapse/log.config:/data/log.config:ro
+      - hailfreq-secrets:/run/secrets:ro
     healthcheck:
       test: ["CMD", "curl", "-fSs", "http://localhost:8008/health"]
       interval: 15s
@@ -323,6 +331,24 @@ configs:
         handlers: [console]
 
       disable_existing_loggers: false
+
+  synapse_entrypoint:
+    content: |
+      #!/bin/sh
+      set -e
+      echo "→ Installing envsubst (gettext-base)"
+      apt-get update -qq && apt-get install -y --no-install-recommends gettext-base 2>&1 | tail -3
+      echo "→ Loading secrets from /run/secrets/"
+      export POSTGRES_PASSWORD=$$(cat /run/secrets/postgres_password)
+      export SYNAPSE_REGISTRATION_SHARED_SECRET=$$(cat /run/secrets/synapse_registration_shared_secret)
+      export SYNAPSE_MACAROON_SECRET=$$(cat /run/secrets/synapse_macaroon_secret)
+      export SYNAPSE_FORM_SECRET=$$(cat /run/secrets/synapse_form_secret)
+      export TURN_SHARED_SECRET=$$(cat /run/secrets/turn_shared_secret)
+      echo "→ Rendering homeserver.yaml from template"
+      envsubst < /config/homeserver.yaml.template > /data/homeserver.yaml
+      cp /config/log.config /data/log.config
+      echo "→ Starting Synapse"
+      exec /start.py
 
   synapse_homeserver_yaml_template:
     content: |
