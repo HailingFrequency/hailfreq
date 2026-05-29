@@ -31,6 +31,8 @@ export class PttController {
   private transmitting: string | null = null;
   /** Provider for the current focus-gate config. Returns default-off config until wired. */
   private getFocusGateConfig: () => PttFocusGateConfig = () => ({ enabled: false, allowlist: [] });
+  /** Prevents concurrent gatedTogglePtt invocations from both passing the gate on rapid key-repeat. */
+  private togglePttInFlight = false;
 
   /** Wire a live focus-gate config provider. The closure must return current settings. */
   setFocusGateConfig(provider: () => PttFocusGateConfig): void {
@@ -58,25 +60,35 @@ export class PttController {
     });
   }
 
-  /** Toggle PTT with focus-gate check (key-press only). */
+  /** Toggle PTT with focus-gate check (key-press only). In-flight guard prevents double-fire on rapid key-repeat. */
   private async gatedTogglePtt(matrixRoomId: string): Promise<void> {
-    const config = this.getFocusGateConfig();
-    if (config.enabled) {
-      const focus = await window.hailfreq.invoke("focus:get");
-      if (!shouldGatePass({ focus, allowlist: config.allowlist })) {
-        return;
+    if (this.togglePttInFlight) return;
+    this.togglePttInFlight = true;
+    try {
+      const config = this.getFocusGateConfig();
+      if (config.enabled) {
+        try {
+          const focus = await window.hailfreq.invoke("focus:get");
+          if (!shouldGatePass({ focus, allowlist: config.allowlist })) return;
+        } catch {
+          // IPC failure — fail open so PTT remains usable
+        }
       }
+      await this.togglePtt(matrixRoomId);
+    } finally {
+      this.togglePttInFlight = false;
     }
-    await this.togglePtt(matrixRoomId);
   }
 
   /** Start hold-PTT with focus-gate check (key-press only). */
   private async gatedHoldStart(matrixRoomId: string): Promise<void> {
     const config = this.getFocusGateConfig();
     if (config.enabled) {
-      const focus = await window.hailfreq.invoke("focus:get");
-      if (!shouldGatePass({ focus, allowlist: config.allowlist })) {
-        return;
+      try {
+        const focus = await window.hailfreq.invoke("focus:get");
+        if (!shouldGatePass({ focus, allowlist: config.allowlist })) return;
+      } catch {
+        // IPC failure — fail open so PTT remains usable
       }
     }
     await this.holdStart(matrixRoomId);
@@ -182,7 +194,7 @@ export class PttController {
     }
   }
 
-  /** Called by press-and-hold (Task 10B) on keydown. */
+  /** Called by press-and-hold (Task 10B) on keydown. Intentionally ungated — for VAD and stop paths; key-press use goes through gatedHoldStart. */
   async holdStart(matrixRoomId: string): Promise<void> {
     if (this.transmitting === matrixRoomId) return;
     await this.engine.startPtt(matrixRoomId);
