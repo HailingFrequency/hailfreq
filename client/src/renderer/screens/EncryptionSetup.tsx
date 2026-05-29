@@ -32,6 +32,7 @@ export function EncryptionSetup({
   const [state, setState] = useState<State>({ kind: "checking" });
   const [confirmed, setConfirmed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -132,13 +133,19 @@ export function EncryptionSetup({
               {state.recoveryKey}
             </code>
             <Button
-              variant="ghost"
+              variant={copied ? "success" : "ghost"}
               className="mt-3 text-xs"
-              onClick={() => {
-                void navigator.clipboard.writeText(state.recoveryKey);
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(state.recoveryKey);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                } catch (err) {
+                  console.error("[recoveryKey] clipboard write failed:", err);
+                }
               }}
             >
-              Copy to clipboard
+              {copied ? "Copied ✓" : "Copy to clipboard"}
             </Button>
           </div>
 
