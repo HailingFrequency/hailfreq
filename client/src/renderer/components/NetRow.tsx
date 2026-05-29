@@ -2,8 +2,9 @@ import type { NetSummary } from "../matrix/nets";
 import { KeybindCapture } from "./KeybindCapture";
 import type { PttMode } from "../voice/PttController";
 import type { ChirpSummary } from "@shared/ipc";
+import type { ActiveShareSummary, LocalShareState } from "../share/types";
 
-interface NetRowProps {
+export interface NetRowProps {
   net: NetSummary;
   monitored: boolean;
   volume: number;
@@ -17,6 +18,12 @@ interface NetRowProps {
   outboundChirp: string;
   inboundChirp: string;
   availableChirps: ChirpSummary[];
+  /** Set when ANY share (local or remote) is active in this net. */
+  activeShare: ActiveShareSummary | null;
+  /** Set when the LOCAL user is sharing TO this net specifically. */
+  localShare: LocalShareState | null;
+  /** True if any local share is active anywhere — used to disable "Share" buttons on other rows. */
+  anyLocalShareActive: boolean;
   onToggleMonitor: () => void;
   onVolumeChange: (volume: number) => void;
   onPttModeChange: (mode: PttMode) => void;
@@ -25,6 +32,9 @@ interface NetRowProps {
   onVoiceThresholdChange: (db: number) => void;
   onOutboundChirpChange: (id: string) => void;
   onInboundChirpChange: (id: string) => void;
+  onStartShare: (matrixRoomId: string) => void;
+  onStopShare: () => void;
+  onOpenViewer: (share: ActiveShareSummary) => void;
 }
 
 export function NetRow({
@@ -41,6 +51,9 @@ export function NetRow({
   outboundChirp,
   inboundChirp,
   availableChirps,
+  activeShare,
+  localShare,
+  anyLocalShareActive,
   onToggleMonitor,
   onVolumeChange,
   onPttModeChange,
@@ -49,6 +62,9 @@ export function NetRow({
   onVoiceThresholdChange,
   onOutboundChirpChange,
   onInboundChirpChange,
+  onStartShare,
+  onStopShare,
+  onOpenViewer,
 }: NetRowProps) {
   return (
     <div className={`flex items-center gap-3 rounded border-l-2 border p-3 ${
@@ -131,6 +147,35 @@ export function NetRow({
       >
         {monitored ? "Monitoring" : "Monitor"}
       </button>
+
+      {/* Share controls — only visible on monitored nets */}
+      {monitored && !localShare && !anyLocalShareActive && (
+        <button
+          onClick={() => onStartShare(net.matrixRoomId)}
+          className="text-xs text-slate-400 hover:text-slate-200"
+          title="Share a screen or window to this net"
+        >
+          Share
+        </button>
+      )}
+      {localShare?.matrixRoomId === net.matrixRoomId && (
+        <button
+          onClick={onStopShare}
+          className="flex items-center gap-1 text-xs text-rose-300 hover:text-rose-200"
+          title="Stop sharing"
+        >
+          🔴 Sharing
+        </button>
+      )}
+      {activeShare && !localShare && (
+        <button
+          onClick={() => onOpenViewer(activeShare)}
+          className="text-xs text-cyan-300 hover:text-cyan-200"
+          title="Open shared screen"
+        >
+          📺
+        </button>
+      )}
 
       {availableChirps.length > 0 && (
         <div className="flex flex-col gap-1">

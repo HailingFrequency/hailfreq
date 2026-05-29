@@ -7,6 +7,9 @@ import { NetRow } from "./NetRow";
 import { VoiceEngine } from "../voice/VoiceEngine";
 import { PttController, type PttMode } from "../voice/PttController";
 import type { ShareEngine } from "../share/ShareEngine";
+import type { ActiveShareSummary, LocalShareState } from "../share/types";
+import { SourcePickerModal } from "../share/SourcePickerModal";
+import { acquireDisplayStream } from "../share/acquireDisplayStream";
 
 
 interface NetListPanelProps {
@@ -120,6 +123,21 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
   const [transmitting, setTransmitting] = useState<string | null>(null);
   const [availableChirps, setAvailableChirps] = useState<ChirpSummary[]>([]);
 
+  // Share UI state
+  // localShare mirrors ShareEngine.getLocalShare() and is updated via event subscription.
+  // NOTE: ShareEngine.on() merges listeners and does not support deduplication — calling
+  // it on each remount would accumulate stale closures. This is acceptable for v1 because
+  // NetListPanel does not remount frequently; the shareEngine is replaced wholesale on logout.
+  const [localShare, setLocalShare] = useState<LocalShareState | null>(
+    () => shareEngine?.getLocalShare() ?? null,
+  );
+  // pickerForRoomId: non-null while the SourcePickerModal is open for a specific net
+  const [pickerForRoomId, setPickerForRoomId] = useState<string | null>(null);
+  // viewingShare: set when the user clicks the 📺 viewer button (Task 7 renders the pane)
+  const [viewingShare, setViewingShare] = useState<ActiveShareSummary | null>(null);
+  // shareError: inline error shown when acquireDisplayStream or startLocalShare fails
+  const [shareError, setShareError] = useState<string | null>(null);
+
   // Expose the VoiceEngine for Plan 4/5 E2E tests when running under HAILFREQ_TEST=1.
   // This lets Playwright's page.evaluate() reach the engine without requiring a real UI action.
   useEffect(() => {
@@ -222,6 +240,20 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
     return () => clearInterval(i);
   }, [ptt]);
 
+  // Subscribe to ShareEngine local-share events so localShare state stays
+  // in sync with engine state across start/stop without polling.
+  useEffect(() => {
+    if (!shareEngine) return;
+    const update = () => setLocalShare(shareEngine.getLocalShare());
+    shareEngine.on({
+      onLocalShareStarted: update,
+      onLocalShareEnded: update,
+    });
+    // No off() method on ShareEngine v1 — listeners are merged and cleared
+    // wholesale on shareEngine.shutdown() (which happens on logout).
+    return () => {/* no-op for v1 */};
+  }, [shareEngine]);
+
   // Shutdown ptt controller on unmount.
   // The VoiceEngine is NOT shut down here when it was provided externally —
   // AppState owns the engine's lifetime and will shut it down alongside the
@@ -235,6 +267,33 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ptt]);
+
+  async function handlePickerResult(
+    selection: { source: import("@shared/ipc").DesktopCaptureSource; captureAudio: boolean } | null,
+  ) {
+    if (!selection) {
+      setPickerForRoomId(null);
+      return;
+    }
+    if (!shareEngine || !pickerForRoomId) {
+      setPickerForRoomId(null);
+      return;
+    }
+    const roomId = pickerForRoomId;
+    setPickerForRoomId(null);
+    try {
+      const stream = await acquireDisplayStream(selection.source, selection.captureAudio);
+      await shareEngine.startLocalShare(roomId, stream);
+      setShareError(null);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Failed to start share");
+    }
+  }
+
+  function handleStopShare() {
+    if (!shareEngine) return;
+    void shareEngine.stopLocalShare();
+  }
 
   async function handleToggleMonitor(net: NetSummary) {
     const current = uiState.get(net.matrixRoomId) ?? defaultUi();
@@ -404,6 +463,14 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
 
   function renderNetRow(net: (typeof nets)[number]) {
     const ui = uiState.get(net.matrixRoomId) ?? defaultUi();
+    // Derive per-row share state
+    const rowActiveShare =
+      shareEngine
+        ?.getActiveShares()
+        .find((s) => s.matrixRoomId === net.matrixRoomId) ?? null;
+    const rowLocalShare =
+      localShare?.matrixRoomId === net.matrixRoomId ? localShare : null;
+    const anyLocalShareActive = localShare !== null;
     return (
       <NetRow
         key={net.matrixRoomId}
@@ -420,6 +487,9 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
         outboundChirp={ui.outboundChirp}
         inboundChirp={ui.inboundChirp}
         availableChirps={availableChirps}
+        activeShare={rowActiveShare}
+        localShare={rowLocalShare}
+        anyLocalShareActive={anyLocalShareActive}
         onToggleMonitor={() => void handleToggleMonitor(net)}
         onVolumeChange={(v) => handleVolume(net.matrixRoomId, v)}
         onPttModeChange={(mode) => void handlePttModeChange(net.matrixRoomId, mode)}
@@ -428,26 +498,59 @@ export function NetListPanel({ client, voiceEngine: externalEngine, shareEngine,
         onVoiceThresholdChange={(db) => void handleVoiceThresholdChange(net.matrixRoomId, db)}
         onOutboundChirpChange={(id) => handleChirpChange(net.matrixRoomId, "outbound", id)}
         onInboundChirpChange={(id) => handleChirpChange(net.matrixRoomId, "inbound", id)}
+        onStartShare={(matrixRoomId) => setPickerForRoomId(matrixRoomId)}
+        onStopShare={handleStopShare}
+        onOpenViewer={(share) => setViewingShare(share)}
       />
     );
   }
 
   return (
-    <div className="flex flex-col gap-2 p-4">
-      {shipNets.length > 0 && (
-        <>
-          <div className="px-3 pb-1 text-xs uppercase tracking-wider text-slate-500">
-            Ships
+    <>
+      <div className="flex flex-col gap-2 p-4">
+        {shareError && (
+          <div className="rounded border border-rose-500/40 bg-rose-900/20 px-3 py-2 text-xs text-rose-300">
+            Share error: {shareError}
+            <button
+              onClick={() => setShareError(null)}
+              className="ml-2 text-rose-400 hover:text-rose-200"
+            >
+              ✕
+            </button>
           </div>
-          {shipNets.map(renderNetRow)}
-          {regularNets.length > 0 && (
-            <div className="px-3 pb-1 pt-2 text-xs uppercase tracking-wider text-slate-500">
-              Nets
+        )}
+        {shipNets.length > 0 && (
+          <>
+            <div className="px-3 pb-1 text-xs uppercase tracking-wider text-slate-500">
+              Ships
             </div>
-          )}
-        </>
+            {shipNets.map(renderNetRow)}
+            {regularNets.length > 0 && (
+              <div className="px-3 pb-1 pt-2 text-xs uppercase tracking-wider text-slate-500">
+                Nets
+              </div>
+            )}
+          </>
+        )}
+        {regularNets.map(renderNetRow)}
+      </div>
+
+      {/* Source picker modal — open while pickerForRoomId is non-null */}
+      {pickerForRoomId && (
+        <SourcePickerModal onPick={(selection) => void handlePickerResult(selection)} />
       )}
-      {regularNets.map(renderNetRow)}
-    </div>
+
+      {/* Share viewer placeholder — Task 7 will replace this with ShareViewerPane */}
+      {viewingShare && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/60"
+          onClick={() => setViewingShare(null)}
+        >
+          <div className="rounded border border-slate-700 bg-slate-900 p-6 text-slate-300">
+            Viewer coming soon
+          </div>
+        </div>
+      )}
+    </>
   );
 }
