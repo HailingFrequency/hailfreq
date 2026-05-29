@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, useCallback, type Dispatch, type SetStateAction } from "react";
 import type { FocusedAppPttSettings, ScIntegrationSettings, ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
@@ -108,6 +108,50 @@ function patchServer(
 }
 
 /**
+ * Wire ShareEngine events so remote shares mirror into React state.
+ * Extracted to avoid duplicating this block in initServer (boot path) and
+ * makeLoginHandler (post-login path).
+ */
+function wireShareEngineEvents(
+  shareEngine: ShareEngine,
+  serverId: string,
+  setState: Dispatch<SetStateAction<AppLevelState>>,
+): void {
+  shareEngine.on({
+    onShareStarted: (share) => {
+      setState((prev) => {
+        const existing = prev.servers.get(serverId);
+        if (!existing) return prev;
+        return patchServer(prev, serverId, {
+          activeShares: [
+            ...existing.activeShares.filter(
+              (s) =>
+                !(
+                  s.matrixRoomId === share.matrixRoomId &&
+                  s.sharerIdentity === share.sharerIdentity
+                ),
+            ),
+            share,
+          ],
+        });
+      });
+    },
+    onShareEnded: (matrixRoomId, sharerIdentity) => {
+      setState((prev) => {
+        const existing = prev.servers.get(serverId);
+        if (!existing) return prev;
+        return patchServer(prev, serverId, {
+          activeShares: existing.activeShares.filter(
+            (s) =>
+              !(s.matrixRoomId === matrixRoomId && s.sharerIdentity === sharerIdentity),
+          ),
+        });
+      });
+    },
+  });
+}
+
+/**
  * Probe stored credentials and start the Matrix client if valid.
  * Routes to "home" on success, "login" on failure/expiry.
  */
@@ -173,39 +217,9 @@ export function AppState() {
         if (cancelled) return;
         // Wire ShareEngine events so active shares mirror into React state.
         // setState is stable across renders; the closures capture entry.id once.
-        const serverId = entry.id;
-        instance.shareEngine?.on({
-          onShareStarted: (share) => {
-            setState((prev) => {
-              const existing = prev.servers.get(serverId);
-              if (!existing) return prev;
-              return patchServer(prev, serverId, {
-                activeShares: [
-                  ...existing.activeShares.filter(
-                    (s) =>
-                      !(
-                        s.matrixRoomId === share.matrixRoomId &&
-                        s.sharerIdentity === share.sharerIdentity
-                      ),
-                  ),
-                  share,
-                ],
-              });
-            });
-          },
-          onShareEnded: (matrixRoomId, sharerIdentity) => {
-            setState((prev) => {
-              const existing = prev.servers.get(serverId);
-              if (!existing) return prev;
-              return patchServer(prev, serverId, {
-                activeShares: existing.activeShares.filter(
-                  (s) =>
-                    !(s.matrixRoomId === matrixRoomId && s.sharerIdentity === sharerIdentity),
-                ),
-              });
-            });
-          },
-        });
+        if (instance.shareEngine) {
+          wireShareEngineEvents(instance.shareEngine, entry.id, setState);
+        }
         servers.set(entry.id, instance);
       }
 
@@ -589,38 +603,7 @@ export function AppState() {
         const handle = await startClient(creds);
         const voiceEngine = new VoiceEngine(handle.client);
         const shareEngine = new ShareEngine(voiceEngine);
-        shareEngine.on({
-          onShareStarted: (share) => {
-            setState((prev) => {
-              const existing = prev.servers.get(serverId);
-              if (!existing) return prev;
-              return patchServer(prev, serverId, {
-                activeShares: [
-                  ...existing.activeShares.filter(
-                    (s) =>
-                      !(
-                        s.matrixRoomId === share.matrixRoomId &&
-                        s.sharerIdentity === share.sharerIdentity
-                      ),
-                  ),
-                  share,
-                ],
-              });
-            });
-          },
-          onShareEnded: (matrixRoomId, sharerIdentity) => {
-            setState((prev) => {
-              const existing = prev.servers.get(serverId);
-              if (!existing) return prev;
-              return patchServer(prev, serverId, {
-                activeShares: existing.activeShares.filter(
-                  (s) =>
-                    !(s.matrixRoomId === matrixRoomId && s.sharerIdentity === sharerIdentity),
-                ),
-              });
-            });
-          },
-        });
+        wireShareEngineEvents(shareEngine, serverId, setState);
 
         setState((s) =>
           patchServer(s, serverId, {
