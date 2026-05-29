@@ -165,8 +165,7 @@ export class BridgeRunner {
           void this.dropParticipantRelay(participant.identity);
         },
       });
-      gate.start();
-      this.vadGates.set(participant.identity, gate);
+      this.replaceVadGate(participant.identity, gate);
       return;
     }
 
@@ -186,10 +185,19 @@ export class BridgeRunner {
           void this.dropParticipantRelay(participant.identity);
         },
       });
-      gate.start();
-      this.vadGates.set(participant.identity, gate);
+      this.replaceVadGate(participant.identity, gate);
       return;
     }
+  }
+
+  private replaceVadGate(participantIdentity: string, gate: VadGate): void {
+    const existing = this.vadGates.get(participantIdentity);
+    if (existing) {
+      this.vadGates.delete(participantIdentity);
+      existing.stop();
+    }
+    gate.start();
+    this.vadGates.set(participantIdentity, gate);
   }
 
   private async startRelayFor(
