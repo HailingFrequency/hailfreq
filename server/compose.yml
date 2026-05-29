@@ -140,11 +140,10 @@ services:
       retries: 3
 
   livekit-auth:
-    # Defaults to the published GHCR image. To build from source instead:
-    #   1) export LIVEKIT_AUTH_IMAGE=hailfreq/livekit-auth:local
-    #   2) uncomment the build: block below
-    #   3) re-run setup.sh (will detect the local tag and build before bringing up)
-    image: ${LIVEKIT_AUTH_IMAGE:-ghcr.io/hailingfrequency/livekit-auth:latest}
+    # Defaults to docker.io/hailfreq/lk-auth. Override via LIVEKIT_AUTH_IMAGE:
+    #   ghcr.io/hailingfrequency/livekit-auth:latest  (alternate registry)
+    #   hailfreq/livekit-auth:local                    (build from source)
+    image: ${LIVEKIT_AUTH_IMAGE:-docker.io/hailfreq/lk-auth:latest}
     # build:
     #   context: ./livekit-auth
     #   dockerfile: Dockerfile
