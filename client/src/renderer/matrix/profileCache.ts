@@ -83,3 +83,32 @@ export async function fetchCitizenIdProfile(
 export function invalidateCitizenIdCache(userId: string): void {
   profileCache.delete(userId);
 }
+
+/**
+ * Search the roster for a member whose published CitizenID profile has the
+ * given RSI handle (case-insensitive). Returns the Matrix user ID or null.
+ *
+ * This relies on members having opted into publishing their RSI handle to
+ * their Matrix profile (Plan 5 Task 14). If no match, returns null.
+ */
+export async function lookupMatrixIdByRsiHandle(
+  client: MatrixClient,
+  rsiHandle: string,
+): Promise<string | null> {
+  const target = rsiHandle.toLowerCase();
+
+  // Iterate joined members across all rooms (de-duplicate by user ID)
+  const seen = new Set<string>();
+  for (const room of client.getRooms()) {
+    for (const member of room.getJoinedMembers()) {
+      if (seen.has(member.userId)) continue;
+      seen.add(member.userId);
+      const profile = await fetchCitizenIdProfile(client, member.userId);
+      if (!profile?.rsiHandle) continue;
+      if (profile.rsiHandle.toLowerCase() === target) {
+        return member.userId;
+      }
+    }
+  }
+  return null;
+}
