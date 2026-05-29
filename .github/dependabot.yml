@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Client (Electron/React) npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/client"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "client"
+
+  # Server integration-test Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/server/tests"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "server"
+
+  # GitHub Actions used in workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"
