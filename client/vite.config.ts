@@ -53,6 +53,39 @@ if (typeof globalThis.require === 'undefined') {
   };
 }
 
+/**
+ * M2: inject a Content-Security-Policy meta tag into the production index.html.
+ * Build-only (`apply: "build"`) so the Vite dev server / HMR (which need
+ * 'unsafe-eval' + ws:) keep working. script-src 'self' is correct for the
+ * file://-loaded packaged app (its bundled scripts are same-origin). connect-src
+ * allows https/wss for arbitrary Matrix homeservers + LiveKit.
+ */
+function cspPlugin(): Plugin {
+  const CSP = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "media-src 'self' blob: mediastream:",
+    "connect-src 'self' https: wss:",
+    "worker-src 'self' blob:",
+    "font-src 'self' data:",
+    "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+  ].join("; ");
+  return {
+    name: "hailfreq-csp",
+    apply: "build",
+    transformIndexHtml(html) {
+      return html.replace(
+        "<head>",
+        `<head>\n    <meta http-equiv="Content-Security-Policy" content="${CSP}" />`,
+      );
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     // L1: compile out the HAILFREQ_TEST gate in the production renderer bundle.
@@ -101,13 +134,17 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron/preload",
-            rollupOptions: { output: { format: "es", entryFileNames: "index.mjs" } },
+            // M1: CJS output (index.cjs) so the preload can run with sandbox:true.
+            // The preload only requires `electron` at runtime, so it's a clean
+            // sandboxed preload.
+            rollupOptions: { output: { format: "cjs", entryFileNames: "index.cjs" } },
           },
         },
       },
     ]),
     renderer(),
     browserRequireShimPlugin(),
+    cspPlugin(),
   ],
   build: {
     outDir: "dist",

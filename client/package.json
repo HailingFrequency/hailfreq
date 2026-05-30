@@ -18,18 +18,19 @@
   },
   "dependencies": {
     "active-win": "^8.2.0",
+    "aws-sdk": "file:./stubs/empty-package",
     "electron-store": "^10.0.0",
     "livekit-client": "^2.19.0",
     "matrix-js-sdk": "^38.2.0",
+    "mock-aws-s3": "file:./stubs/empty-package",
+    "nock": "file:./stubs/empty-package",
     "node-global-key-listener": "^0.3.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0",
-    "mock-aws-s3": "file:./stubs/empty-package",
-    "aws-sdk": "file:./stubs/empty-package",
-    "nock": "file:./stubs/empty-package"
+    "react-dom": "^18.3.0"
   },
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.10.0",
     "@types/qrcode": "^1.5.6",
