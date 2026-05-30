@@ -1102,6 +1102,14 @@ export function AppState() {
     [],
   );
 
+  const enabledServerNames = useMemo(
+    () =>
+      Array.from(state.servers.values())
+        .filter((s) => s.entry.scIntegration?.enabled)
+        .map((s) => s.entry.label),
+    [state.servers],
+  );
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -1163,9 +1171,7 @@ export function AppState() {
         inputDeviceId={state.inputDeviceId}
         outputDeviceId={state.outputDeviceId}
         onChangeAudioDevices={handleChangeAudioDevices}
-        enabledServerNames={Array.from(state.servers.values())
-          .filter((s) => s.entry.scIntegration?.enabled)
-          .map((s) => s.entry.label)}
+        enabledServerNames={enabledServerNames}
         onChangeScInstallPath={handleChangeScInstallPath}
       />
       <div className="flex-1 overflow-hidden">
