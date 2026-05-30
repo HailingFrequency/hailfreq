@@ -36,3 +36,6 @@ npm-debug.log*
 *.bak
 *.tmp
 *~
+
+# Internal security review reports — keep out of the public repo until fixes land
+docs/security/

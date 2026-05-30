@@ -182,12 +182,17 @@ export class VoiceEngine {
     });
 
     const keyBytes = await fetchSframeKey(this.client, args.matrixRoomId);
-    let e2eeConfig: E2EEConfig | undefined;
-    if (keyBytes) {
-      e2eeConfig = { keyBytes, worker: createLiveKitE2EEWorker() };
-    } else {
-      console.warn(`Net ${args.matrixRoomId} has no SFrame key — joining without E2EE`);
+    if (!keyBytes) {
+      // SECURITY (H7): refuse to join rather than silently downgrade to
+      // unencrypted voice. A missing authorized key means the net was
+      // misconfigured or key delivery was suppressed — joining unencrypted
+      // would break the privacy guarantee without the user knowing.
+      throw new Error(
+        `Refusing to monitor net ${args.matrixRoomId}: no authorized SFrame key available ` +
+          `(joining would be unencrypted)`,
+      );
     }
+    const e2eeConfig: E2EEConfig = { keyBytes, worker: createLiveKitE2EEWorker() };
 
     const connection = new NetConnection({ e2ee: e2eeConfig });
     const liveKitRoomName = url.split("/").pop() || ""; // best-effort; not load-bearing
