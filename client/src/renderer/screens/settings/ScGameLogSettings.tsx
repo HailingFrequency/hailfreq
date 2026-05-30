@@ -34,13 +34,19 @@ export function ScGameLogSettings({ scInstallPath, enabledServerNames, onChange 
     setPathValid(null);
     const p = scInstallPath?.trim();
     if (!p) return;
+    let cancelled = false;
     validateTimer.current = setTimeout(() => {
       void window.hailfreq
         .invoke("sc:validatePath", { path: p })
-        .then((valid) => setPathValid(valid))
-        .catch(() => setPathValid(false));
+        .then((valid) => {
+          if (!cancelled) setPathValid(valid);
+        })
+        .catch(() => {
+          if (!cancelled) setPathValid(false);
+        });
     }, 300);
     return () => {
+      cancelled = true;
       if (validateTimer.current) clearTimeout(validateTimer.current);
     };
   }, [scInstallPath]);
@@ -108,14 +114,22 @@ export function ScGameLogSettings({ scInstallPath, enabledServerNames, onChange 
   async function handleSelectCandidate(candidate: ScInstallCandidate) {
     setCandidates(null);
     setDetectError("");
-    await onChange(candidate.gameLogPath);
+    try {
+      await onChange(candidate.gameLogPath);
+    } catch {
+      setDetectError("Failed to save the selected path.");
+    }
   }
 
   async function handleClear() {
     setCandidates(null);
     setDetectError("");
     setPickError("");
-    await onChange(undefined);
+    try {
+      await onChange(undefined);
+    } catch {
+      setPickError("Failed to clear the path.");
+    }
   }
 
   const kind = deriveScWatchStatus({ scInstallPath, enabledServerNames, watching: status.watching });
@@ -129,7 +143,13 @@ export function ScGameLogSettings({ scInstallPath, enabledServerNames, onChange 
           tone: "text-amber-400",
         };
       case "watching":
-        return { text: `Watching ✓ — last activity ${formatActivity(status.lastLineAt, now)}`, tone: "text-green-400" };
+        return {
+          text:
+            status.lastLineAt === null
+              ? "Watching ✓ — no activity yet"
+              : `Watching ✓ — last activity ${formatActivity(status.lastLineAt, now)}`,
+          tone: "text-green-400",
+        };
       case "not-watching":
         return { text: "Not watching — Game.log not found at the configured path.", tone: "text-rose-400" };
     }
