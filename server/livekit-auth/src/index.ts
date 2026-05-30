@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import express, { type Request, type Response } from "express";
+import rateLimit from "express-rate-limit";
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+
+/** Matrix user ID format: @localpart:domain */
+const MXID_RE = /^@[^\s:]+:[^\s:]+$/;
 
 /**
  * Read a secret value, preferring /run/secrets/<name> if it exists
@@ -28,20 +32,49 @@ const LIVEKIT_API_SECRET = readSecret("livekit_api_secret", "LIVEKIT_API_SECRET"
 const roomService = new RoomServiceClient(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
 
 const app = express();
+// Behind Caddy: trust the first proxy hop so express-rate-limit keys on the
+// real client IP (X-Forwarded-For) rather than the proxy's.
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "32kb" }));
 
-// CORS middleware (defensive; Caddy will be in front)
+// CORS (H4): the previous hardcoded wildcard let any origin read /token and
+// /kick responses. It's now configurable via LK_AUTH_CORS_ORIGIN. NOTE: the
+// Electron client loads from a file:// origin (sent as "null"), so locking this
+// down requires the client to use a fixed app:// origin; until then operators
+// who run only the Electron client can leave the default. Bearer tokens (not
+// cookies) carry auth, so a wildcard is not a CSRF vector, but it is needless
+// cross-origin exposure.
+const CORS_ORIGIN = process.env.LK_AUTH_CORS_ORIGIN || "*";
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
+// Rate limiting (H3): each /token call triggers 2 Synapse round-trips and a JWT
+// signing; /kick triggers 3 Synapse calls + a LiveKit admin op. Cap per-IP to
+// blunt floods / amplification against Synapse.
+const tokenLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "rate limit exceeded" },
+});
+const kickLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "rate limit exceeded" },
+});
+
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-app.post("/token", async (req: Request, res: Response) => {
+app.post("/token", tokenLimiter, async (req: Request, res: Response) => {
   try {
     const { matrixAccessToken, matrixRoomId } = req.body as {
       matrixAccessToken?: string;
@@ -86,7 +119,10 @@ app.post("/token", async (req: Request, res: Response) => {
     // 4. Mint LiveKit JWT
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity: userId,
-      ttl: 60 * 60 * 6, // 6 hours
+      // M4: 1 hour (was 6h). Limits the window in which a kicked/removed user
+      // can reconnect with a still-valid token. The client re-mints on
+      // disconnect; a proactive pre-expiry refresh would be the ideal follow-up.
+      ttl: 60 * 60,
     });
     at.addGrant({
       room: liveKitRoom,
@@ -104,7 +140,7 @@ app.post("/token", async (req: Request, res: Response) => {
   }
 });
 
-app.post("/kick", async (req: Request, res: Response) => {
+app.post("/kick", kickLimiter, async (req: Request, res: Response) => {
   try {
     const { matrixAccessToken, matrixRoomId, targetUserId } = req.body as {
       matrixAccessToken?: string;
@@ -114,6 +150,11 @@ app.post("/kick", async (req: Request, res: Response) => {
 
     if (!matrixAccessToken || !matrixRoomId || !matrixRoomId.startsWith("!") || !targetUserId) {
       return res.status(400).json({ error: "matrixAccessToken, matrixRoomId, targetUserId required" });
+    }
+    // M5: validate target is a well-formed Matrix user ID before passing it to
+    // the LiveKit admin API.
+    if (typeof targetUserId !== "string" || !MXID_RE.test(targetUserId)) {
+      return res.status(400).json({ error: "targetUserId must be a Matrix user ID (@user:domain)" });
     }
 
     // Validate the requester
