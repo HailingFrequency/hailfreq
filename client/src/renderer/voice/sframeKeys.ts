@@ -1,6 +1,29 @@
-import type { MatrixClient } from "matrix-js-sdk";
+import type { MatrixClient, MatrixEvent, Room } from "matrix-js-sdk";
 
 const SFRAME_KEY_EVENT = "org.hailfreq.net.sframe-key";
+
+/**
+ * Minimum power level a member must hold for their SFrame key events to be
+ * trusted. This MUST match the rotation gate in keyRotationCoordinator — only
+ * PL≥50 members generate keys, so only their key events are authoritative.
+ *
+ * SECURITY (C1): without this check, any room member (PL 0) could publish an
+ * `org.hailfreq.net.sframe-key` event and have every other client adopt their
+ * attacker-chosen key, breaking the voice E2EE guarantee. The receive path must
+ * enforce the same authorization as the send path.
+ */
+export const KEY_AUTHORITY_PL = 50;
+
+/**
+ * True if the event's sender currently holds enough power level in the room to
+ * be a trusted source of SFrame keys. Unknown sender / unknown member → false.
+ */
+function senderHasKeyAuthority(room: Room | null, ev: MatrixEvent): boolean {
+  const sender = ev.getSender();
+  if (!room || !sender) return false;
+  const pl = room.getMember(sender)?.powerLevel ?? 0;
+  return pl >= KEY_AUTHORITY_PL;
+}
 
 /**
  * Generate a fresh 32-byte SFrame key.
@@ -73,6 +96,10 @@ export async function fetchSframeKey(
         }
       });
     }
+    // Skip events that failed Megolm decryption (stub/empty content) and any
+    // key from a sender without rotation authority (see C1).
+    if (ev.isDecryptionFailure()) continue;
+    if (!senderHasKeyAuthority(room, ev)) continue;
     const content = ev.getContent();
     if (typeof content.key !== "string") continue;
     return base64Decode(content.key);
@@ -109,6 +136,9 @@ export async function listSframeKeys(
         }
       });
     }
+    // Skip decryption failures and unauthorized senders (see C1).
+    if (ev.isDecryptionFailure()) continue;
+    if (!senderHasKeyAuthority(room, ev)) continue;
     const content = ev.getContent();
     if (typeof content.key !== "string") continue;
     out.push({

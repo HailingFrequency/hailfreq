@@ -253,11 +253,24 @@ export async function restoreFromRecoveryKey(
   //    We return the first candidate key ID, supplying our decoded bytes.
   const previousCallback = client.cryptoCallbacks.getSecretStorageKey;
   client.cryptoCallbacks.getSecretStorageKey = async ({ keys }) => {
-    const keyId = Object.keys(keys)[0];
-    if (!keyId) {
+    const candidateIds = Object.keys(keys);
+    if (candidateIds.length === 0) {
       return null;
     }
-    return [keyId, keyBytes];
+    // M7: when more than one SSSS key exists (e.g. after a re-key), return the
+    // key id our recovery key actually validates against rather than blindly
+    // taking the first — picking the wrong id fails recovery with a misleading
+    // error. Fall back to the first candidate if validation is unavailable.
+    for (const id of candidateIds) {
+      try {
+        if (await client.secretStorage.checkKey(keyBytes, keys[id] as never)) {
+          return [id, keyBytes];
+        }
+      } catch {
+        break; // checkKey unavailable/threw — use the fallback below
+      }
+    }
+    return [candidateIds[0], keyBytes];
   };
 
   try {
