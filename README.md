@@ -8,7 +8,41 @@ Built for guilds that want their own infrastructure instead of trusting a third 
 
 ## Status
 
-**v0.1.0 — early testing.** The full planned feature set is shipped (server kit, multi-net voice, admin board, Star Citizen integration, focused-app PTT, screen sharing, cross-server net bridges). This is the first build going out to real testers. Expect rough edges; report what breaks.
+**Client v0.3.0 · server kit-v0.3.1 — testing, security-hardened.** The full planned feature set is shipped (server kit, multi-net voice, admin board, Star Citizen integration, focused-app PTT, screen sharing, cross-server net bridges), plus a security-hardening pass: voice-E2EE key authorization, Electron sandbox/CSP/fuses, and a hardened, podman-compatible server kit. Expect rough edges; report what breaks.
+
+## Quick start
+
+### Join a server (use the client)
+
+1. Download the latest client from the **[Releases page](../../releases/latest)**:
+   - **Linux:** `Hailfreq-<version>-x86_64.AppImage` → `chmod +x Hailfreq-*.AppImage && ./Hailfreq-*.AppImage`
+   - **Windows:** `Hailfreq-<version>-x64.exe` → run it (unsigned, so SmartScreen warns → **More info → Run anyway**)
+2. On first launch, enter your server's domain (e.g. `rpk.chat`) and sign in (CitizenID SSO or a local account).
+3. Save the **Recovery Key** when prompted (you need it to read encrypted history on a new device), finish the audio setup wizard, then create or join a net and talk.
+
+### Host your own server (~30 min)
+
+Needs a VPS with a public IPv4, a domain, and **Docker Compose v2 or podman-compose**.
+
+```bash
+mkdir -p ~/hailfreq && cd ~/hailfreq
+
+# 1. Download + extract the server kit
+curl -L https://github.com/HailingFrequency/hailfreq/releases/latest/download/hailfreq-server-kit.tar.gz | tar xz --strip-components=1
+
+# 2. Point DNS A records for your domain + server hostname at the VPS, then:
+cat > .env <<EOF
+HAILFREQ_DOMAIN=your-domain.com
+HAILFREQ_SERVER_HOSTNAME=server.your-domain.com
+HAILFREQ_ADMIN_EMAIL=admin@your-domain.com
+HAILFREQ_PUBLIC_IP=$(curl -s ifconfig.me)
+EOF
+
+# 3. Bring it up (secrets auto-generate on first start)
+docker compose up -d          # or: podman-compose up -d
+```
+
+Then create your first admin user and sign in. Full walkthrough (firewall ports, admin user, onboarding, backups): **[`server/README.md`](server/README.md)**.
 
 ## Features
 
@@ -52,15 +86,15 @@ Built for guilds that want their own infrastructure instead of trusting a third 
 
 **Linux (AppImage):**
 ```bash
-chmod +x Hailfreq-0.1.0-x86_64.AppImage
-./Hailfreq-0.1.0-x86_64.AppImage
+chmod +x Hailfreq-*-x86_64.AppImage
+./Hailfreq-*-x86_64.AppImage
 ```
 
 **Windows (NSIS installer):**
 
-Double-click `Hailfreq-0.1.0-x64.exe`. The installer is unsigned, so Windows SmartScreen will warn — click **More info → Run anyway**. Code-signing certificates are on the roadmap.
+Double-click `Hailfreq-<version>-x64.exe`. The installer is unsigned, so Windows SmartScreen will warn — click **More info → Run anyway**. Code-signing certificates are on the roadmap.
 
-**Both:** download from the [Releases](../../releases) page.
+**Both:** download the latest build from the [Releases](../../releases/latest) page.
 
 ## Connect
 
