@@ -17,6 +17,14 @@ import type { MatrixClient } from "matrix-js-sdk";
 
 export interface CitizenIdProfileClaim {
   rsiHandle?: string;
+  /**
+   * SECURITY (M6): this is SELF-PUBLISHED to the user's own Matrix account-data,
+   * so it is attacker-controllable (any user can set rsiVerified:true on
+   * themselves). It is NOT proof of CitizenID/RSI ownership until server-side
+   * verification exists. Treat as an unverified claim: never use it for any
+   * authorization decision, and do not re-enable publishOwnCitizenIdProfile to
+   * write `rsiVerified:true` without a trusted server-side source.
+   */
   rsiVerified?: boolean;
 }
 

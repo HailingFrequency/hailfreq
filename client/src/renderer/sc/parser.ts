@@ -1,5 +1,11 @@
 import type { ScEvent } from "./events";
 
+// L6: values parsed from the (locally-writable) Game.log flow into Matrix room
+// names and UI. There's no HTML sink today, but clamp length defensively so a
+// crafted log line can't inject an absurdly long ship/owner/handle string.
+const MAX_FIELD = 64;
+const clamp = (s: string): string => s.slice(0, MAX_FIELD);
+
 // Anchors (case-sensitive; SC logs are consistent)
 const TIMESTAMP_RE = /^<([0-9TZ:.\-]+)>/;
 const LOGIN_RE = /<Expect Incoming Connection>.*nickname="([^"]+)".*playerGEID=(\d+)/;
@@ -17,8 +23,8 @@ export function parseLine(line: string): ScEvent | null {
     return {
       kind: "you-joined-channel",
       timestamp: ts,
-      shipType: m[1].trim(),
-      owner: m[2].trim(),
+      shipType: clamp(m[1].trim()),
+      owner: clamp(m[2].trim()),
     };
   }
 
@@ -28,9 +34,9 @@ export function parseLine(line: string): ScEvent | null {
     return {
       kind: "other-joined-channel",
       timestamp: ts,
-      player: m[1].trim(),
-      shipType: m[2].trim(),
-      owner: m[3].trim(),
+      player: clamp(m[1].trim()),
+      shipType: clamp(m[2].trim()),
+      owner: clamp(m[3].trim()),
     };
   }
 
@@ -40,7 +46,7 @@ export function parseLine(line: string): ScEvent | null {
     return {
       kind: "login",
       timestamp: ts,
-      nickname: m[1],
+      nickname: clamp(m[1]),
       geid: m[2],
     };
   }
@@ -51,7 +57,7 @@ export function parseLine(line: string): ScEvent | null {
     return {
       kind: "ship-destroyed",
       timestamp: ts,
-      shipType: m[1],
+      shipType: clamp(m[1]),
       owner: null,
     };
   }

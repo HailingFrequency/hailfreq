@@ -50,8 +50,8 @@ export function AdminDetail({ client, member, nets, caps }: AdminDetailProps) {
         <h2 className="text-base font-semibold text-slate-100">{member.displayName}</h2>
         <p className="mt-1 text-xs text-slate-500">{member.userId}</p>
         {member.rsiVerified && (
-          <p className="mt-1 text-xs text-emerald-300">
-            ✓ RSI verified · {member.rsiHandle ?? "—"}
+          <p className="mt-1 text-xs text-emerald-300" title="Self-reported via CitizenID account-data; not server-verified">
+            RSI (self-reported) · {member.rsiHandle ?? "—"}
           </p>
         )}
         <p className="mt-1 text-xs text-slate-500">Presence: {member.presence}</p>
