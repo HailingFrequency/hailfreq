@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../components/Button";
+import { playTestTone } from "../../audio/testTone";
 
 interface Props {
   initialDeviceId: string | undefined;
@@ -20,39 +21,6 @@ export function OutputStep({ initialDeviceId, onNext, onBack, onSkip }: Props) {
       if (!selected && outs[0]) setSelected(outs[0].deviceId);
     })();
   }, []);
-
-  async function playTestTone() {
-    const ctx = new AudioContext();
-    // Pipe through an audio element so we can use setSinkId
-    // (AudioContext itself doesn't support setSinkId directly)
-    const dest = ctx.createMediaStreamDestination();
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.value = 660;
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.01);
-    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
-    osc.connect(gain).connect(dest);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.3);
-
-    const audio = new Audio();
-    audio.srcObject = dest.stream;
-    try {
-      // setSinkId is non-standard but supported by Chromium/Electron
-      if (selected && "setSinkId" in audio) {
-        await (audio as HTMLAudioElement & { setSinkId: (id: string) => Promise<void> }).setSinkId(selected);
-      }
-    } catch (err) {
-      console.error("setSinkId failed:", err);
-    }
-    void audio.play();
-    setTimeout(() => {
-      void ctx.close();
-      audio.srcObject = null;
-    }, 400);
-  }
 
   return (
     <div className="space-y-4">
@@ -77,7 +45,7 @@ export function OutputStep({ initialDeviceId, onNext, onBack, onSkip }: Props) {
       </label>
 
       <div>
-        <Button onClick={() => void playTestTone()}>Test tone</Button>
+        <Button onClick={() => void playTestTone(selected)}>Test tone</Button>
       </div>
 
       <div className="flex justify-between gap-2">
