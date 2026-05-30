@@ -157,6 +157,26 @@ export function registerIpcHandlers(): void {
     settings.set("audioSetupComplete", v);
   });
 
+  ipcMain.handle("settings:setAudioDevices", (_event, args: unknown): void => {
+    if (!args || typeof args !== "object") {
+      throw new Error("settings:setAudioDevices: args must be an object");
+    }
+    const { inputDeviceId, outputDeviceId } = args as {
+      inputDeviceId?: unknown;
+      outputDeviceId?: unknown;
+    };
+    if (inputDeviceId !== undefined && typeof inputDeviceId !== "string") {
+      throw new Error("settings:setAudioDevices: inputDeviceId must be a string or undefined");
+    }
+    if (outputDeviceId !== undefined && typeof outputDeviceId !== "string") {
+      throw new Error("settings:setAudioDevices: outputDeviceId must be a string or undefined");
+    }
+    if (inputDeviceId !== undefined) settings.set("inputDeviceId", inputDeviceId);
+    else settings.delete("inputDeviceId");
+    if (outputDeviceId !== undefined) settings.set("outputDeviceId", outputDeviceId);
+    else settings.delete("outputDeviceId");
+  });
+
   ipcMain.handle("settings:setBridges", (_event, args: unknown): void => {
     if (args === null || typeof args !== "object" || !("bridges" in args)) {
       throw new Error("settings:setBridges: args must be { bridges: BridgeConfig[] }");

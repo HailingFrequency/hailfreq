@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../../components/Button";
+import { useMicLevel } from "../../audio/useMicLevel";
 
 interface Props {
   initialDeviceId: string | undefined;
@@ -10,9 +11,6 @@ interface Props {
 export function InputStep({ initialDeviceId, onNext, onSkip }: Props) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selected, setSelected] = useState<string>(initialDeviceId ?? "");
-  const [level, setLevel] = useState(0);
-  const streamRef = useRef<MediaStream | null>(null);
-  const ctxRef = useRef<AudioContext | null>(null);
 
   // Enumerate input devices (requires permission — request getUserMedia first to unlock labels)
   useEffect(() => {
@@ -31,53 +29,7 @@ export function InputStep({ initialDeviceId, onNext, onSkip }: Props) {
     })();
   }, []);
 
-  // Hot-swap capture stream to the selected device + render level meter
-  useEffect(() => {
-    if (!selected) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
-
-    void (async () => {
-      try {
-        // Tear down any prior stream
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        await ctxRef.current?.close();
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: { exact: selected } },
-        });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        const ctx = new AudioContext();
-        ctxRef.current = ctx;
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        source.connect(analyser);
-
-        const buf = new Float32Array(analyser.fftSize);
-        timer = setInterval(() => {
-          if (cancelled) return;
-          analyser.getFloatTimeDomainData(buf);
-          let s = 0;
-          for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
-          setLevel(Math.sqrt(s / buf.length));
-        }, 50);
-      } catch (err) {
-        console.error("input step: getUserMedia failed", err);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (timer) clearInterval(timer);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      void ctxRef.current?.close();
-    };
-  }, [selected]);
+  const level = useMicLevel(selected);
 
   const pct = Math.min(100, Math.round(Math.pow(level, 0.5) * 130));
 

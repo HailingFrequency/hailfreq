@@ -120,6 +120,13 @@ export interface Settings {
    * False on fresh install; set to true after the wizard finishes.
    */
   audioSetupComplete?: boolean;
+  /**
+   * Persisted global audio device selections (deviceId from enumerateDevices).
+   * Undefined = use the system default. Set via the Settings → Audio menu and
+   * the first-run wizard.
+   */
+  inputDeviceId?: string;
+  outputDeviceId?: string;
 }
 
 declare global {
