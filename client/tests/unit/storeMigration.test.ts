@@ -113,3 +113,21 @@ describe("migrateLegacyShape", () => {
     expect(migrated.ui.theme).toBe("dark");
   });
 });
+
+describe("audio device persistence", () => {
+  it("passes through inputDeviceId/outputDeviceId on the multi-server shape", () => {
+    const out = migrateLegacyShape({
+      servers: [],
+      activeServerId: "",
+      inputDeviceId: "mic-1",
+      outputDeviceId: "spk-1",
+    });
+    expect(out.inputDeviceId).toBe("mic-1");
+    expect(out.outputDeviceId).toBe("spk-1");
+  });
+  it("leaves them undefined when absent", () => {
+    const out = migrateLegacyShape({ servers: [], activeServerId: "" });
+    expect(out.inputDeviceId).toBeUndefined();
+    expect(out.outputDeviceId).toBeUndefined();
+  });
+});

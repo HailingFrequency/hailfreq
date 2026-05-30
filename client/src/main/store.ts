@@ -91,6 +91,8 @@ export function migrateLegacyShape(raw: unknown): Settings {
     focusedAppPtt: typed.focusedAppPtt ?? { enabled: false, allowlistEntries: ["StarCitizen"] },
     bridges: typed.bridges ?? [],
     ...(typeof typed.audioSetupComplete === "boolean" ? { audioSetupComplete: typed.audioSetupComplete } : {}),
+    ...(typeof typed.inputDeviceId === "string" ? { inputDeviceId: typed.inputDeviceId } : {}),
+    ...(typeof typed.outputDeviceId === "string" ? { outputDeviceId: typed.outputDeviceId } : {}),
   };
   return settingsWithFocus;
 }
