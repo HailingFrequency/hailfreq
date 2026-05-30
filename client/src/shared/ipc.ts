@@ -88,6 +88,7 @@ export interface IpcChannels {
   "settings:setFocusedAppPtt": { args: [{ focusedAppPtt: FocusedAppPttSettings }]; result: void };
   "settings:setBridges": { args: [{ bridges: BridgeConfig[] }]; result: void };
   "settings:setAudioSetupComplete": { args: [{ value: boolean }]; result: void };
+  "settings:setAudioDevices": { args: [{ inputDeviceId?: string; outputDeviceId?: string }]; result: void };
   "share:listSources": { args: []; result: DesktopCaptureSource[] };
 }
 
