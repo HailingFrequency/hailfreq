@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Note: client and server kit version independently. Kit releases use the `kit-vX.Y.Z` tag prefix.
 
+## [kit-0.3.1] - 2026-05-30
+
+Security-hardening + portability patch for the kit (internal security review). **Fixes a critical deploy bug (C2)** and makes the kit actually deployable on podman/podman-compose. Operators on kit-0.3.0 should redeploy from this kit.
+
+### Packaging — now multi-file (podman-compatible)
+
+kit-0.3.0 delivered all config via Compose `configs:` with inline `content:` — a **docker-compose-only** feature. **podman-compose does not materialize it**, so a fresh deploy on podman never started (every service was missing its config). The kit now ships config as **real files** (`Caddyfile`, `synapse/`, `livekit/`, `coturn/`, `postgres/`) bind-mounted via `volumes:`, which works on both docker compose and podman-compose.
+
+- **Distribution change:** the kit is no longer a single `compose.yml` — it's `compose.yml` + the config files. Deploy by extracting the release tarball (or `git clone`), creating `.env`, and `compose up -d`.
+- `bootstrap` now stays running + healthy and dependents use `service_healthy` (podman rejects `service_completed_successfully` on an Exited one-shot).
+- Generated secrets are `chmod 644` (coturn runs as `nobody`, synapse as uid 991 — couldn't read 600).
+- The synapse entrypoint chowns `/data` to uid 991 on first start (fresh rootless volumes are root-owned → `signing.key` write failed). Replaces the old `setup.sh` chown step.
+- Verified end-to-end via a full local `podman-compose` bring-up (bootstrap + postgres + synapse + livekit + coturn all healthy).
+
+### Security — server kit
+
+- **C2 (CRITICAL) — livekit & coturn started with empty secrets.** Their inline configs referenced `${LIVEKIT_API_KEY}` / `${TURN_SHARED_SECRET}`, which Compose interpolated from the *host env* — but those secrets live in the bootstrap-generated `hailfreq-secrets` volume, so on a fresh deploy they rendered empty (LiveKit signed against an empty key → all voice tokens rejected; coturn accepted any TURN credential). Both services now have a `sed`-based entrypoint that renders their config from `/run/secrets/` at start (mirroring Synapse); the secret vars are placeholder tokens so Compose leaves them untouched.
+- **H5 — Synapse admin API blocked at the edge.** Caddy now returns 403 for `/_synapse/admin/*` (operators use the container-internal `localhost:8008`; the admin API is never exposed publicly).
+- **L3 — federation endpoints not exposed.** Caddy returns 403 for `/_matrix/federation/*` (federation is disabled; avoids version/existence leak).
+- **L2 — coturn `verbose` removed** (it logged per-session peer/client IPs — call metadata at odds with the privacy model).
+- **livekit-auth image hardened** (`docker.io/hailfreq/lk-auth:latest`): per-IP rate limiting on `/token` (20/min) and `/kick` (10/min), configurable CORS (`LK_AUTH_CORS_ORIGIN`), JWT TTL 6h → 1h, and Matrix-user-ID validation on `/kick`.
+
+### Docs
+
+- Firewall table documents that `tcp/7880` must stay closed (LiveKit signaling is reached only via Caddy on 443).
+- Integration-test docs note the Synapse shared secret must be a throwaway, never a production secret.
+
+[kit-0.3.1]: https://github.com/HailingFrequency/hailfreq/releases/tag/kit-v0.3.1
+
 ## [kit-0.3.0] - 2026-05-29
 
 Turnkey single-file server kit. Operator now downloads one `compose.yml` and creates a 4-line `.env` to deploy the full stack — no `git clone`, no `setup.sh`, no template files. Secrets auto-generate on first run into a managed Docker volume.
