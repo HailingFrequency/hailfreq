@@ -134,10 +134,19 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron/preload",
-            // M1: CJS output (index.cjs) so the preload can run with sandbox:true.
-            // The preload only requires `electron` at runtime, so it's a clean
-            // sandboxed preload.
-            rollupOptions: { output: { format: "cjs", entryFileNames: "index.cjs" } },
+            // M1: the preload MUST be CJS for sandbox:true. vite-plugin-electron
+            // auto-builds a lib from `entry` and, because package.json is
+            // "type":"module", defaults it to ESM — which overrides a plain
+            // output.format and left an ESM `import` in index.cjs (sandboxed
+            // preloads can't use ESM → "Cannot use import statement outside a
+            // module"). Forcing build.lib.formats:["cjs"] makes the external
+            // `electron` import compile to require().
+            lib: {
+              entry: "src/preload/index.ts",
+              formats: ["cjs"],
+              fileName: () => "index.cjs",
+            },
+            rollupOptions: { external: ["electron"] },
           },
         },
       },
