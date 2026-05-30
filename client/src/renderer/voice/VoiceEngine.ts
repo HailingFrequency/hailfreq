@@ -7,6 +7,12 @@ import { loadChirp, playChirp } from "./chirpPlayer";
 import type { MatrixClient } from "matrix-js-sdk";
 import { ExternalE2EEKeyProvider } from "livekit-client";
 import type { Room, RemoteAudioTrack, RemoteParticipant } from "livekit-client";
+import { micConstraints } from "../audio/deviceConstraints";
+
+/** True if this AudioContext implementation supports setSinkId (Chromium 110+). */
+export function audioContextSupportsSinkId(ctor?: typeof AudioContext): boolean {
+  return !!ctor && typeof ctor.prototype === "object" && "setSinkId" in ctor.prototype;
+}
 
 /** Inbound silence debounce: only play inbound chirp if participant has been silent ≥ this long. */
 const INBOUND_CHIRP_DEBOUNCE_MS = 2000;
@@ -64,6 +70,8 @@ export class VoiceEngine {
   private activePttNet: string | null = null;
   /** The captured MediaStream (mic). Allocated lazily on first PTT or getMicSource(). */
   private micStream: MediaStream | null = null;
+  private inputDeviceId?: string;
+  private outputDeviceId?: string;
   /** AudioContext source node wrapping the mic stream. Used by voice-activation analysis. */
   private micSourceNode: MediaStreamAudioSourceNode | null = null;
   /** AnalyserNode connected to the mic source. Created alongside micSourceNode. Used for RMS level metering. */
@@ -135,6 +143,7 @@ export class VoiceEngine {
     this.chirpGain = this.audioCtx.createGain();
     this.chirpGain.gain.value = 1.0;
     this.chirpGain.connect(this.outputGain);
+    void this.applyOutputDevice();
   }
 
   /**
@@ -365,15 +374,7 @@ export class VoiceEngine {
   async getMicSource(): Promise<MediaStreamAudioSourceNode> {
     this.ensureAudio();
     if (!this.micStream) {
-      this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: false,
-          channelCount: 1,
-          sampleRate: 48000,
-        },
-      });
+      this.micStream = await navigator.mediaDevices.getUserMedia(micConstraints(this.inputDeviceId));
     }
     if (!this.micSourceNode) {
       this.micSourceNode = this.audioCtx!.createMediaStreamSource(this.micStream);
@@ -383,6 +384,35 @@ export class VoiceEngine {
       this.micSourceNode.connect(this.localMicAnalyser);
     }
     return this.micSourceNode;
+  }
+
+  /** Set persisted audio devices and apply them live. Call after construction and on settings change. */
+  async setAudioDevices(opts: { inputDeviceId?: string; outputDeviceId?: string }): Promise<void> {
+    const inputChanged = opts.inputDeviceId !== this.inputDeviceId;
+    this.inputDeviceId = opts.inputDeviceId;
+    this.outputDeviceId = opts.outputDeviceId;
+    await this.applyOutputDevice();
+    if (inputChanged && this.micStream) {
+      this.micStream.getTracks().forEach((t) => t.stop());
+      this.micStream = null;
+      if (this.micSourceNode) {
+        this.micSourceNode.disconnect();
+        this.micSourceNode = null;
+        this.localMicAnalyser = null;
+      }
+    }
+  }
+
+  private async applyOutputDevice(): Promise<void> {
+    if (!this.audioCtx || !this.outputDeviceId) return;
+    if (!audioContextSupportsSinkId(AudioContext)) return;
+    try {
+      await (this.audioCtx as AudioContext & { setSinkId: (id: string) => Promise<void> }).setSinkId(
+        this.outputDeviceId,
+      );
+    } catch (err) {
+      console.error("[VoiceEngine] setSinkId failed; using default output:", err);
+    }
   }
 
   /**
