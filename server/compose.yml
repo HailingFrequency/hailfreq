@@ -1,10 +1,20 @@
 name: hailfreq
 
+# Multi-file kit: config lives in real files under ./ (Caddyfile, synapse/,
+# livekit/, coturn/, postgres/) and is bind-mounted via `volumes:`. This works
+# on both docker compose and podman-compose. (The previous single-file design
+# used Compose `configs:` with inline content, which podman-compose does not
+# materialize — so the stack couldn't start on podman.)
+
 services:
   bootstrap:
     image: docker.io/alpine:3.22
     container_name: hailfreq-bootstrap
-    restart: "no"
+    # Stays running (not a one-shot) so dependents can use a `service_healthy`
+    # condition. podman-compose mishandles `service_completed_successfully` on an
+    # Exited one-shot — podman's --requires refuses to start dependents whose dep
+    # is Exited ("container state improper"). service_healthy is handled reliably.
+    restart: unless-stopped
     volumes:
       - hailfreq-secrets:/secrets
     command:
@@ -12,18 +22,29 @@ services:
       - -c
       - |
         set -e
-        if [ -f /secrets/.bootstrap-complete ]; then
-          echo "→ Secrets already generated, skipping bootstrap"
-          exit 0
+        if [ ! -f /secrets/.bootstrap-complete ]; then
+          echo "→ Generating secrets..."
+          apk add --quiet --no-cache openssl
+          for s in postgres_password synapse_registration_shared_secret synapse_macaroon_secret synapse_form_secret livekit_api_key livekit_api_secret turn_shared_secret; do
+            openssl rand -hex 32 > /secrets/$$s
+            # 644 so non-root service users (coturn runs as 'nobody', synapse as
+            # uid 991) can read them. The volume is internal to the stack and, on
+            # rootless podman, lives under the user's storage — not world-readable.
+            chmod 644 /secrets/$$s
+          done
+          touch /secrets/.bootstrap-complete
+          echo "→ Generated 7 secrets in /secrets"
+        else
+          echo "→ Secrets already present, skipping generation"
         fi
-        echo "→ Generating secrets..."
-        apk add --quiet --no-cache openssl
-        for s in postgres_password synapse_registration_shared_secret synapse_macaroon_secret synapse_form_secret livekit_api_key livekit_api_secret turn_shared_secret; do
-          openssl rand -hex 32 > /secrets/$$s
-          chmod 600 /secrets/$$s
-        done
-        touch /secrets/.bootstrap-complete
-        echo "→ Generated 7 secrets in /secrets"
+        echo "→ Bootstrap idle (healthy); dependents may start"
+        exec tail -f /dev/null
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /secrets/.bootstrap-complete"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
     networks:
       - hailfreq
 
@@ -33,7 +54,7 @@ services:
     restart: unless-stopped
     depends_on:
       bootstrap:
-        condition: service_completed_successfully
+        condition: service_healthy
     environment:
       POSTGRES_USER: synapse
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
@@ -41,10 +62,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - hailfreq-secrets:/run/secrets:ro
-    configs:
-      - source: postgres_init_db
-        target: /docker-entrypoint-initdb.d/10-init-synapse.sh
-        mode: 0755
+      - ./postgres/init-synapse.sh:/docker-entrypoint-initdb.d/10-init-synapse.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
       interval: 10s
@@ -61,19 +79,19 @@ services:
       postgres:
         condition: service_healthy
       bootstrap:
-        condition: service_completed_successfully
-    entrypoint: ["/config/entrypoint.sh"]
-    configs:
-      - source: synapse_entrypoint
-        target: /config/entrypoint.sh
-        mode: 0755
-      - source: synapse_homeserver_yaml_template
-        target: /config/homeserver.yaml.template
-      - source: synapse_log_config
-        target: /config/log.config
+        condition: service_healthy
+    # entrypoint.sh renders homeserver.yaml via envsubst (HAILFREQ_* from env
+    # below + secrets it reads from /run/secrets), then exec's Synapse.
+    entrypoint: ["/bin/sh", "/config/entrypoint.sh"]
+    environment:
+      HAILFREQ_DOMAIN: ${HAILFREQ_DOMAIN:?HAILFREQ_DOMAIN not set}
+      HAILFREQ_SERVER_HOSTNAME: ${HAILFREQ_SERVER_HOSTNAME:?HAILFREQ_SERVER_HOSTNAME not set}
     volumes:
       - synapse_data:/data
       - hailfreq-secrets:/run/secrets:ro
+      - ./synapse/entrypoint.sh:/config/entrypoint.sh:ro
+      - ./synapse/homeserver.yaml.template:/config/homeserver.yaml.template:ro
+      - ./synapse/log.config:/config/log.config:ro
     healthcheck:
       test: ["CMD", "curl", "-fSs", "http://localhost:8008/health"]
       interval: 15s
@@ -97,10 +115,9 @@ services:
       HAILFREQ_DOMAIN: ${HAILFREQ_DOMAIN:?HAILFREQ_DOMAIN not set}
       HAILFREQ_SERVER_HOSTNAME: ${HAILFREQ_SERVER_HOSTNAME:?HAILFREQ_SERVER_HOSTNAME not set}
       HAILFREQ_ADMIN_EMAIL: ${HAILFREQ_ADMIN_EMAIL:?HAILFREQ_ADMIN_EMAIL not set}
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
     volumes:
+      # Caddy substitutes the {$HAILFREQ_*} placeholders from the env above.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:
@@ -112,19 +129,19 @@ services:
     image: docker.io/livekit/livekit-server:v1.7
     container_name: hailfreq-livekit
     restart: unless-stopped
-    # SECURITY (C2): API key/secret live in the bootstrap-generated secrets
-    # volume, NOT the host env — so the config is rendered at runtime from
-    # /run/secrets (mirrors the Synapse entrypoint). Without this, Compose
-    # interpolated the keys to empty strings and LiveKit booted unauthenticated.
+    depends_on:
+      bootstrap:
+        condition: service_healthy
+    # SECURITY (C2): API key/secret come from the bootstrap secrets volume; the
+    # entrypoint renders livekit.yaml at runtime (sed) — they're never in host env.
     entrypoint: ["/bin/sh", "/etc/livekit-entrypoint.sh"]
     network_mode: host  # required for ICE/UDP NAT traversal — see docs/deployment.md
+    environment:
+      HAILFREQ_PUBLIC_IP: ${HAILFREQ_PUBLIC_IP:?HAILFREQ_PUBLIC_IP not set}
     volumes:
       - hailfreq-secrets:/run/secrets:ro
-    configs:
-      - source: livekit_yaml
-        target: /etc/livekit.yaml.template
-      - source: livekit_entrypoint
-        target: /etc/livekit-entrypoint.sh
+      - ./livekit/livekit.yaml.template:/etc/livekit.yaml.template:ro
+      - ./livekit/entrypoint.sh:/etc/livekit-entrypoint.sh:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
       interval: 15s
@@ -136,18 +153,19 @@ services:
     image: docker.io/coturn/coturn:4.6
     container_name: hailfreq-coturn
     restart: unless-stopped
-    network_mode: host
-    # SECURITY (C2): render turnserver.conf at runtime from /run/secrets so the
-    # static-auth-secret is the real generated value (was empty → TURN accepted
-    # any credential).
+    depends_on:
+      bootstrap:
+        condition: service_healthy
+    # SECURITY (C2): static-auth-secret rendered at runtime from /run/secrets.
     entrypoint: ["/bin/sh", "/etc/coturn-entrypoint.sh"]
+    network_mode: host
+    environment:
+      HAILFREQ_PUBLIC_IP: ${HAILFREQ_PUBLIC_IP:?HAILFREQ_PUBLIC_IP not set}
+      HAILFREQ_SERVER_HOSTNAME: ${HAILFREQ_SERVER_HOSTNAME:?HAILFREQ_SERVER_HOSTNAME not set}
     volumes:
       - hailfreq-secrets:/run/secrets:ro
-    configs:
-      - source: turnserver_conf
-        target: /etc/coturn/turnserver.conf.template
-      - source: coturn_entrypoint
-        target: /etc/coturn-entrypoint.sh
+      - ./coturn/turnserver.conf.template:/etc/coturn/turnserver.conf.template:ro
+      - ./coturn/entrypoint.sh:/etc/coturn-entrypoint.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pidof turnserver"]
       interval: 30s
@@ -159,16 +177,13 @@ services:
     #   ghcr.io/hailingfrequency/livekit-auth:latest  (alternate registry)
     #   hailfreq/livekit-auth:local                    (build from source)
     image: ${LIVEKIT_AUTH_IMAGE:-docker.io/hailfreq/lk-auth:latest}
-    # build:
-    #   context: ./livekit-auth
-    #   dockerfile: Dockerfile
     container_name: hailfreq-livekit-auth
     restart: unless-stopped
     depends_on:
       synapse:
         condition: service_healthy
       bootstrap:
-        condition: service_completed_successfully
+        condition: service_healthy
     environment:
       PORT: "8088"
       SYNAPSE_URL: "http://synapse:8008"
@@ -194,354 +209,3 @@ volumes:
   caddy_data:
   caddy_config:
   hailfreq-secrets:
-
-configs:
-  postgres_init_db:
-    content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-
-      psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" <<-EOSQL
-        CREATE DATABASE synapse
-          ENCODING 'UTF8'
-          LC_COLLATE='C'
-          LC_CTYPE='C'
-          TEMPLATE=template0
-          OWNER synapse;
-      EOSQL
-
-  caddyfile:
-    content: |
-      {
-        email ${HAILFREQ_ADMIN_EMAIL}
-      }
-
-      ${HAILFREQ_DOMAIN} {
-        handle /.well-known/matrix/client {
-          header Content-Type application/json
-          header Access-Control-Allow-Origin *
-          respond `{"m.homeserver":{"base_url":"https://${HAILFREQ_SERVER_HOSTNAME}"}}`
-        }
-        handle /.well-known/matrix/server {
-          header Content-Type application/json
-          respond `{"m.server":"${HAILFREQ_SERVER_HOSTNAME}:443"}`
-        }
-        handle /_matrix/federation/* {
-          # SECURITY (L3): federation is disabled (whitelist []); don't expose
-          # the endpoints (avoids version/existence leak to scanners).
-          respond 403
-        }
-        handle /_matrix/* {
-          reverse_proxy synapse:8008
-        }
-        handle /_synapse/admin/* {
-          # SECURITY (H5): the admin API must never be reachable from the public
-          # internet. Operators use it via the container-internal localhost:8008
-          # (e.g. `podman exec ... http://localhost:8008`), never through Caddy.
-          respond 403
-        }
-        handle /_synapse/* {
-          reverse_proxy synapse:8008
-        }
-        handle {
-          respond "Hailfreq — use a Matrix client and enter ${HAILFREQ_DOMAIN} as the server URL." 200
-        }
-        encode gzip
-      }
-
-      ${HAILFREQ_SERVER_HOSTNAME} {
-        handle /_matrix/federation/* {
-          # SECURITY (L3): federation is disabled (whitelist []); don't expose
-          # the endpoints (avoids version/existence leak to scanners).
-          respond 403
-        }
-        handle /_matrix/* {
-          reverse_proxy synapse:8008
-        }
-        handle /_synapse/admin/* {
-          # SECURITY (H5): the admin API must never be reachable from the public
-          # internet. Operators use it via the container-internal localhost:8008
-          # (e.g. `podman exec ... http://localhost:8008`), never through Caddy.
-          respond 403
-        }
-        handle /_synapse/* {
-          reverse_proxy synapse:8008
-        }
-        handle /lk-auth/* {
-          uri strip_prefix /lk-auth
-          reverse_proxy livekit-auth:8088
-        }
-        handle /livekit/* {
-          uri strip_prefix /livekit
-          reverse_proxy host.docker.internal:7880
-        }
-        handle {
-          respond "Hailfreq server." 200
-        }
-        encode gzip
-        log {
-          output stdout
-          format console
-        }
-      }
-
-  livekit_yaml:
-    content: |
-      # REQUIRED FIREWALL on the host VPS:
-      #   tcp/443       — HTTPS (Caddy)
-      #   tcp/80        — HTTP (Caddy, Let's Encrypt challenges)
-      #   tcp/7881      — LiveKit TCP fallback for media
-      #   udp/3478      — TURN (coturn standalone)
-      #   tcp/3478      — TURN (coturn standalone)
-      #   udp/5349      — TURN over TLS (coturn standalone)
-      #   tcp/5349      — TURN over TLS (coturn standalone)
-      #   udp/50000-50100 — LiveKit media ports
-      # SECURITY (M9): do NOT open tcp/7880 on the host firewall — LiveKit's
-      # signaling/API is reached only via Caddy (/livekit/* on 443). 7880 is
-      # bound on the host for the local reverse-proxy hop, not public access.
-      port: 7880
-      bind_addresses:
-        - "0.0.0.0"
-
-      rtc:
-        tcp_port: 7881
-        port_range_start: 50000
-        port_range_end: 50100
-        use_external_ip: true
-        node_ip: "${HAILFREQ_PUBLIC_IP}"
-
-      keys:
-        __LIVEKIT_API_KEY__: __LIVEKIT_API_SECRET__
-
-      turn:
-        enabled: false
-
-      logging:
-        level: info
-        sample: false
-
-      redis: {}
-
-      # E2EE — actual key management is client-side; this opts in to the SFrame routing path
-      room:
-        enable_remote_unmute: false
-        auto_create: true
-
-      webhook:
-        api_key: __LIVEKIT_API_KEY__
-        urls: []
-
-  turnserver_conf:
-    content: |
-      listening-port=3478
-      tls-listening-port=5349
-
-      listening-ip=0.0.0.0
-      external-ip=${HAILFREQ_PUBLIC_IP}
-
-      min-port=49152
-      max-port=49999
-
-      realm=${HAILFREQ_SERVER_HOSTNAME}
-      server-name=${HAILFREQ_SERVER_HOSTNAME}
-
-      # Long-term credential with shared secret (REST API style — Synapse/LiveKit generate temp creds)
-      use-auth-secret
-      static-auth-secret=__TURN_SHARED_SECRET__
-
-      total-quota=100
-      bps-capacity=0
-      stale-nonce=600
-
-      # Security: only relay to/from public addresses
-      no-multicast-peers
-      denied-peer-ip=10.0.0.0-10.255.255.255
-      denied-peer-ip=172.16.0.0-172.31.255.255
-      denied-peer-ip=192.168.0.0-192.168.255.255
-      denied-peer-ip=127.0.0.0-127.255.255.255
-      denied-peer-ip=169.254.0.0-169.254.255.255
-      denied-peer-ip=100.64.0.0-100.127.255.255
-
-      # Hardening
-      no-cli
-      no-tlsv1
-      no-tlsv1_1
-      fingerprint
-
-      log-file=stdout
-      # SECURITY (L2): 'verbose' removed — it logged per-session peer/client IPs
-      # and timing (call metadata at odds with the privacy model). Re-add only
-      # for short-lived debugging.
-
-  synapse_log_config:
-    content: |
-      version: 1
-
-      formatters:
-        precise:
-          format: '%(asctime)s - %(name)s - %(lineno)d - %(levelname)s - %(request)s - %(message)s'
-
-      handlers:
-        console:
-          class: logging.StreamHandler
-          formatter: precise
-
-      loggers:
-        synapse.storage.SQL:
-          level: INFO
-
-      root:
-        level: INFO
-        handlers: [console]
-
-      disable_existing_loggers: false
-
-  synapse_entrypoint:
-    content: |
-      #!/bin/sh
-      set -e
-      echo "→ Installing envsubst (gettext-base)"
-      apt-get update -qq && apt-get install -y --no-install-recommends gettext-base 2>&1 | tail -3
-      echo "→ Loading secrets from /run/secrets/"
-      export POSTGRES_PASSWORD=$$(cat /run/secrets/postgres_password)
-      export SYNAPSE_REGISTRATION_SHARED_SECRET=$$(cat /run/secrets/synapse_registration_shared_secret)
-      export SYNAPSE_MACAROON_SECRET=$$(cat /run/secrets/synapse_macaroon_secret)
-      export SYNAPSE_FORM_SECRET=$$(cat /run/secrets/synapse_form_secret)
-      export TURN_SHARED_SECRET=$$(cat /run/secrets/turn_shared_secret)
-      echo "→ Rendering homeserver.yaml from template"
-      envsubst < /config/homeserver.yaml.template > /data/homeserver.yaml
-      cp /config/log.config /data/log.config
-      echo "→ Starting Synapse"
-      exec /start.py
-
-  livekit_entrypoint:
-    content: |
-      #!/bin/sh
-      set -e
-      echo "→ Rendering livekit.yaml from /run/secrets"
-      KEY=$$(cat /run/secrets/livekit_api_key)
-      SECRET=$$(cat /run/secrets/livekit_api_secret)
-      sed -e "s|__LIVEKIT_API_KEY__|$$KEY|g" \
-          -e "s|__LIVEKIT_API_SECRET__|$$SECRET|g" \
-          /etc/livekit.yaml.template > /tmp/livekit.yaml
-      echo "→ Starting LiveKit"
-      exec livekit-server --config /tmp/livekit.yaml
-
-  coturn_entrypoint:
-    content: |
-      #!/bin/sh
-      set -e
-      echo "→ Rendering turnserver.conf from /run/secrets"
-      SECRET=$$(cat /run/secrets/turn_shared_secret)
-      sed -e "s|__TURN_SHARED_SECRET__|$$SECRET|g" \
-          /etc/coturn/turnserver.conf.template > /tmp/turnserver.conf
-      echo "→ Starting coturn"
-      exec turnserver -c /tmp/turnserver.conf
-
-  synapse_homeserver_yaml_template:
-    content: |
-      # Hailfreq Synapse homeserver config
-      # Generated from homeserver.yaml.template — do not edit directly; edit the template.
-
-      server_name: "${HAILFREQ_DOMAIN}"
-      public_baseurl: "https://${HAILFREQ_SERVER_HOSTNAME}/"
-      pid_file: /data/homeserver.pid
-      web_client_location: ""
-      serve_server_wellknown: true
-
-      listeners:
-        - port: 8008
-          tls: false
-          type: http
-          x_forwarded: true
-          bind_addresses: ['0.0.0.0']
-          resources:
-            - names: [client, federation]
-              compress: true
-
-      database:
-        name: psycopg2
-        args:
-          user: synapse
-          password: $${POSTGRES_PASSWORD}
-          database: synapse
-          host: postgres
-          port: 5432
-          cp_min: 5
-          cp_max: 10
-
-      log_config: "/data/log.config"
-
-      media_store_path: /data/media_store
-      max_upload_size: 50M
-      max_image_pixels: 32M
-
-      # Disable registration entirely — onboarding is via OIDC or admin-issued tokens
-      enable_registration: false
-      registration_requires_token: true
-
-      # Disable federation entirely (island server per Hailfreq spec §2.2)
-      federation_domain_whitelist: []
-      allow_public_rooms_over_federation: false
-
-      # Disable public room directory
-      allow_public_rooms_without_auth: false
-
-      # Encryption mandatory for new private rooms
-      encryption_enabled_by_default_for_room_type: invite
-
-      # Retention defaults — keep things short for privacy
-      retention:
-        enabled: true
-        default_policy:
-          min_lifetime: 1d
-          max_lifetime: 90d
-
-      # Secrets
-      registration_shared_secret: "$${SYNAPSE_REGISTRATION_SHARED_SECRET}"
-      macaroon_secret_key: "$${SYNAPSE_MACAROON_SECRET}"
-      form_secret: "$${SYNAPSE_FORM_SECRET}"
-      signing_key_path: "/data/signing.key"
-
-      # Trust ourselves — Caddy terminates TLS and forwards X-Forwarded-* headers
-      trusted_key_servers: []
-      suppress_key_server_warning: true
-
-      # OIDC (CitizenID) configured separately in Task 5 — placeholder for now
-      oidc_providers:
-        []
-
-      # URL previews disabled by default (privacy)
-      url_preview_enabled: false
-
-      # Disable telemetry
-      report_stats: false
-
-      # Rate limiting — sensible defaults
-      rc_message:
-        per_second: 0.5
-        burst_count: 10
-
-      rc_registration:
-        per_second: 0.17
-        burst_count: 3
-
-      rc_login:
-        address:
-          per_second: 0.17
-          burst_count: 3
-        account:
-          per_second: 0.17
-          burst_count: 3
-        failed_attempts:
-          per_second: 0.17
-          burst_count: 3
-
-      # TURN config — advertise coturn to clients via /_matrix/client/v3/voip/turnServer
-      turn_uris:
-        - "turn:${HAILFREQ_SERVER_HOSTNAME}:3478?transport=udp"
-        - "turn:${HAILFREQ_SERVER_HOSTNAME}:3478?transport=tcp"
-        - "turns:${HAILFREQ_SERVER_HOSTNAME}:5349?transport=tcp"
-      turn_shared_secret: "$${TURN_SHARED_SECRET}"
-      turn_user_lifetime: 86400000
-      turn_allow_guests: false
