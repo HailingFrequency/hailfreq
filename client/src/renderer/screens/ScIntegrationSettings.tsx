@@ -3,7 +3,6 @@ import type { ScIntegrationSettings as ScIntegrationSettingsType } from "@shared
 import { Button } from "../components/Button";
 
 interface Props {
-  serverId: string;
   /** Current per-server SC integration settings (may be undefined if never set). */
   scIntegration?: ScIntegrationSettingsType;
   onSave: (patch: { scIntegration: ScIntegrationSettingsType }) => Promise<void>;

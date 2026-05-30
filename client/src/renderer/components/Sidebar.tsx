@@ -26,7 +26,7 @@ interface SidebarProps {
   ) => Promise<void>;
   onSaveFocusedAppPtt?: (value: FocusedAppPttSettings) => Promise<void>;
   onReorder?: (orderedIds: string[]) => void;
-  /** Global Game.log path (passed through from AppState for the SC panel). */
+  /** Global Game.log path (forwarded to SettingsMenu → ScGameLogSettings). */
   scInstallPath?: string;
   /** Global focused-app PTT settings (passed through from AppState). */
   focusedAppPtt?: FocusedAppPttSettings;
@@ -37,7 +37,7 @@ interface SidebarProps {
   onChangeAudioDevices?: (d: { inputDeviceId?: string; outputDeviceId?: string }) => void;
   /** Display names of servers with Ship Link enabled (for the SC settings status line). */
   enabledServerNames?: string[];
-  /** Persist the global Game.log path from the SC settings section. */
+  /** Persist the global Game.log path (forwarded to SettingsMenu → ScGameLogSettings). */
   onChangeScInstallPath?: (path: string | undefined) => Promise<void> | void;
 }
 
@@ -176,7 +176,6 @@ export function Sidebar({
       )}
       {scIntegrationFor && onSaveScIntegration && (
         <ScIntegrationSettingsPanel
-          serverId={scIntegrationFor.id}
           scIntegration={scIntegrationFor.scIntegration}
           onSave={(patch) => onSaveScIntegration(scIntegrationFor.id, patch)}
           onClose={() => setScIntegrationFor(null)}
