@@ -81,6 +81,17 @@ export default defineConfig({
           build: {
             outDir: "dist-electron/main",
             rollupOptions: { output: { format: "es", entryFileNames: "index.mjs" } },
+            // The main bundle is ESM (index.mjs). CJS deps must be transformed or
+            // their `module.exports` leaks into ES-module scope at runtime
+            // ("ReferenceError: module is not defined in ES module scope").
+            // vite's default commonjs `include` is node_modules-only, which misses
+            // the local stub (stubs/empty-package — a file: dep pulled into the
+            // main process via active-win → node-pre-gyp → mock-aws-s3, and reached
+            // through a symlink that resolves OUTSIDE node_modules). Include it.
+            commonjsOptions: {
+              include: [/node_modules/, /stubs[\\/]empty-package/],
+              transformMixedEsModules: true,
+            },
           },
         },
       },
