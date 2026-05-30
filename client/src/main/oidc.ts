@@ -19,6 +19,14 @@ interface OidcResult {
  *   4. Resolve with the token; the renderer then calls m.login.token to finalize.
  */
 export async function runSsoFlow(params: OidcStartParams): Promise<OidcResult> {
+  // H1: validate the homeserver URL scheme before it flows into shell.openExternal.
+  // `new URL()` accepts file://, ftp://, etc.; only http(s) is a legitimate
+  // homeserver, and we must never hand an arbitrary-scheme URI to the OS opener.
+  const hs = new URL(params.homeserverUrl);
+  if (hs.protocol !== "https:" && hs.protocol !== "http:") {
+    throw new Error(`Refusing SSO: homeserverUrl must be http(s), got '${hs.protocol}'`);
+  }
+
   const { port, server, settled } = await startLoopbackListener();
   const redirectUrl = `http://127.0.0.1:${port}/callback`;
 
@@ -59,9 +67,14 @@ async function startLoopbackListener(): Promise<{
       server.close();
     }, 5 * 60_000);
 
+    let responded = false;
     server.on("request", (req, res) => {
       const url = new URL(req.url ?? "/", `http://127.0.0.1`);
-      if (url.pathname !== "/callback") {
+      // L5: once we've accepted the first valid callback, reject any further
+      // requests to this ephemeral loopback port rather than serving the
+      // success page again (first-caller-wins is already enforced by the
+      // single-resolve promise; this makes the intent explicit).
+      if (responded || url.pathname !== "/callback") {
         res.statusCode = 404;
         res.end("not found");
         return;
@@ -73,6 +86,7 @@ async function startLoopbackListener(): Promise<{
         reject?.(new Error("No loginToken in SSO callback"));
         return;
       }
+      responded = true;
       res.statusCode = 200;
       res.setHeader("Content-Type", "text/html");
       res.end(SSO_SUCCESS_HTML);

@@ -54,6 +54,14 @@ if (typeof globalThis.require === 'undefined') {
 }
 
 export default defineConfig({
+  define: {
+    // L1: compile out the HAILFREQ_TEST gate in the production renderer bundle.
+    // That gate exposes window.__matrixHandle (incl. the Matrix access token) and
+    // window.__voiceEngine; inlining "0" here lets the bundler dead-strip it so a
+    // stray env var in a shipped build can never enable it. Test builds pass
+    // HAILFREQ_TEST=1 to `vite build` explicitly.
+    "process.env.HAILFREQ_TEST": JSON.stringify(process.env.HAILFREQ_TEST ?? "0"),
+  },
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),

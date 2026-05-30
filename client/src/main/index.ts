@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from "electron";
+import { pathToFileURL } from "node:url";
 import { createMainWindow } from "./window";
 import { registerIpcHandlers } from "./ipc";
 import { settings } from "./store";
@@ -66,9 +67,12 @@ app.on("web-contents-created", (_event, contents) => {
   contents.on("will-navigate", (event, url) => {
     const isDev = !app.isPackaged;
     const devUrl = process.env.VITE_DEV_SERVER_URL;
+    // M3: only allow navigation to the dev server (in dev) or within the app's
+    // own bundle directory. The previous `file://` allowance let an XSS payload
+    // navigate to e.g. file:///etc/passwd and exfiltrate it.
+    const appBase = pathToFileURL(app.getAppPath() + "/").href;
     const allowed =
-      (isDev && !!devUrl && url.startsWith(devUrl))
-      || url.startsWith("file://");
+      (isDev && !!devUrl && url.startsWith(devUrl)) || url.startsWith(appBase);
     if (!allowed) event.preventDefault();
   });
   contents.setWindowOpenHandler(() => ({ action: "deny" }));
