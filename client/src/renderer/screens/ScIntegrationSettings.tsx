@@ -1,19 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import type { ScInstallCandidate } from "@shared/ipc";
+import { useState } from "react";
 import type { ScIntegrationSettings as ScIntegrationSettingsType } from "@shared/types";
 import { Button } from "../components/Button";
-import { Input } from "../components/Input";
 
 interface Props {
   serverId: string;
   /** Current per-server SC integration settings (may be undefined if never set). */
   scIntegration?: ScIntegrationSettingsType;
-  /** Current global Game.log path (may be undefined if never set). */
-  scInstallPath?: string;
-  onSave: (patch: {
-    scIntegration: ScIntegrationSettingsType;
-    scInstallPath: string | undefined;
-  }) => Promise<void>;
+  onSave: (patch: { scIntegration: ScIntegrationSettingsType }) => Promise<void>;
   onClose: () => void;
 }
 
@@ -23,13 +16,7 @@ const DEFAULT_SC_INTEGRATION: ScIntegrationSettingsType = {
   autoCloseOnDestruction: true,
 };
 
-export function ScIntegrationSettings({
-  scIntegration,
-  scInstallPath,
-  onSave,
-  onClose,
-}: Props) {
-  // --- Local form state (copies of props; only written back on Save) ---
+export function ScIntegrationSettings({ scIntegration, onSave, onClose }: Props) {
   const [enabled, setEnabled] = useState(scIntegration?.enabled ?? DEFAULT_SC_INTEGRATION.enabled);
   const [allowlist, setAllowlist] = useState<string[]>(
     scIntegration?.autoInviteAllowlist ?? DEFAULT_SC_INTEGRATION.autoInviteAllowlist,
@@ -37,86 +24,10 @@ export function ScIntegrationSettings({
   const [autoClose, setAutoClose] = useState(
     scIntegration?.autoCloseOnDestruction ?? DEFAULT_SC_INTEGRATION.autoCloseOnDestruction,
   );
-  const [pathInput, setPathInput] = useState(scInstallPath ?? "");
-  const [pathError, setPathError] = useState<string>("");
-  const [pathValid, setPathValid] = useState<boolean | null>(null);
-
   const [allowlistInput, setAllowlistInput] = useState("");
   const [allowlistError, setAllowlistError] = useState("");
-
-  const [candidates, setCandidates] = useState<ScInstallCandidate[] | null>(null);
-  const [detectBusy, setDetectBusy] = useState(false);
-  const [detectError, setDetectError] = useState("");
-
+  const [saveError, setSaveError] = useState("");
   const [busy, setSaving] = useState(false);
-
-  // Validate the path in pathInput whenever it changes (debounced).
-  const validateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (validateTimer.current) clearTimeout(validateTimer.current);
-    setPathValid(null);
-    setPathError("");
-
-    if (!pathInput.trim()) return;
-
-    validateTimer.current = setTimeout(() => {
-      void window.hailfreq
-        .invoke("sc:validatePath", { path: pathInput.trim() })
-        .then((valid) => {
-          setPathValid(valid);
-          if (!valid) {
-            setPathError("Path not found or not a valid Game.log file");
-          }
-        })
-        .catch(() => {
-          setPathValid(false);
-          setPathError("Could not validate path");
-        });
-    }, 400);
-
-    return () => {
-      if (validateTimer.current) clearTimeout(validateTimer.current);
-    };
-  }, [pathInput]);
-
-  // Auto-detect: call sc:findInstall and render candidate list.
-  async function handleAutoDetect() {
-    setDetectBusy(true);
-    setDetectError("");
-    setCandidates(null);
-    try {
-      const found = await window.hailfreq.invoke("sc:findInstall");
-      setCandidates(found);
-      if (found.length === 0) {
-        setDetectError("No Star Citizen installation found automatically.");
-      }
-    } catch {
-      setDetectError("Auto-detect failed. Try browsing manually.");
-    } finally {
-      setDetectBusy(false);
-    }
-  }
-
-  // Browse: open native file picker via sc:pickGameLog.
-  async function handleBrowse() {
-    try {
-      const picked = await window.hailfreq.invoke("sc:pickGameLog");
-      if (picked) {
-        setPathInput(picked);
-        setCandidates(null);
-        setDetectError("");
-      }
-    } catch {
-      setPathError("Could not open file picker");
-    }
-  }
-
-  function handleSelectCandidate(candidate: ScInstallCandidate) {
-    setPathInput(candidate.gameLogPath);
-    setCandidates(null);
-    setDetectError("");
-  }
 
   function handleAddToAllowlist() {
     const handle = allowlistInput.trim();
@@ -141,7 +52,7 @@ export function ScIntegrationSettings({
 
   async function handleSave() {
     setSaving(true);
-    setPathError("");
+    setSaveError("");
     try {
       await onSave({
         scIntegration: {
@@ -149,17 +60,14 @@ export function ScIntegrationSettings({
           autoInviteAllowlist: allowlist,
           autoCloseOnDestruction: autoClose,
         },
-        scInstallPath: pathInput.trim() || undefined,
       });
       onClose();
     } catch (err) {
-      setPathError(err instanceof Error ? `Save failed: ${err.message}` : "Save failed");
+      setSaveError(err instanceof Error ? `Save failed: ${err.message}` : "Save failed");
     } finally {
       setSaving(false);
     }
   }
-
-  const pathUnset = !pathInput.trim();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
@@ -186,57 +94,19 @@ export function ScIntegrationSettings({
               />
               <span className="text-sm text-slate-200">Watch Game.log for this server</span>
             </label>
-            {enabled && pathUnset && (
+            {enabled && (
               <p className="mt-2 ml-6 text-xs text-amber-400">
-                Set a Game.log path below first — the watcher won&apos;t start until a valid path is configured.
+                The watcher only runs once a valid Game.log path is set in ⚙ Settings → Star Citizen.
               </p>
             )}
           </section>
 
-          {/* Section 2: Game.log path */}
+          {/* Section 2: Game.log path now lives in global Settings */}
           <section>
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Game.log path</p>
-            <Input
-              label="Path"
-              value={pathInput}
-              onChange={(e) => {
-                setPathInput(e.target.value);
-                setCandidates(null);
-              }}
-              placeholder="/path/to/StarCitizen/LIVE/Game.log"
-              error={pathError}
-            />
-            {pathValid === true && (
-              <p className="mt-1 text-xs text-green-400">Path looks valid.</p>
-            )}
-            <div className="mt-2 flex gap-2">
-              <Button variant="ghost" onClick={() => void handleAutoDetect()} disabled={detectBusy} className="text-xs px-3 py-1.5">
-                {detectBusy ? "Detecting…" : "Auto-detect"}
-              </Button>
-              <Button variant="ghost" onClick={() => void handleBrowse()} className="text-xs px-3 py-1.5">
-                Browse…
-              </Button>
-            </div>
-            {detectError && (
-              <p className="mt-2 text-xs text-rose-400">{detectError}</p>
-            )}
-            {candidates !== null && candidates.length > 0 && (
-              <ul className="mt-2 rounded border border-slate-700 bg-slate-800 divide-y divide-slate-700">
-                {candidates.map((c) => (
-                  <li key={c.gameLogPath}>
-                    <button
-                      className="w-full text-left px-3 py-2 hover:bg-slate-700 transition-colors"
-                      onClick={() => handleSelectCandidate(c)}
-                    >
-                      <span className="block text-xs text-brand-300 font-medium">
-                        {c.branch} <span className="text-slate-500">({c.source})</span>
-                      </span>
-                      <span className="block text-xs text-slate-400 break-all">{c.gameLogPath}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <p className="text-xs text-slate-400">
+              The Game.log path is set in ⚙ Settings → Star Citizen (it&apos;s shared across all your servers).
+            </p>
           </section>
 
           {/* Section 3: Allowlist */}
@@ -304,6 +174,8 @@ export function ScIntegrationSettings({
               Automatically leaves the ship net when Game.log reports your ship was destroyed.
             </p>
           </section>
+
+          {saveError && <p className="text-xs text-rose-400">{saveError}</p>}
         </div>
 
         {/* Footer */}
