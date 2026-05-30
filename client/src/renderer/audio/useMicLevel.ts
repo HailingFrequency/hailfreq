@@ -18,8 +18,6 @@ export function useMicLevel(deviceId: string | undefined): number {
     let timer: ReturnType<typeof setInterval> | null = null;
     void (async () => {
       try {
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        await ctxRef.current?.close();
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
@@ -44,8 +42,10 @@ export function useMicLevel(deviceId: string | undefined): number {
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      void ctxRef.current?.close();
+      const s = streamRef.current; streamRef.current = null;
+      const c = ctxRef.current; ctxRef.current = null;
+      s?.getTracks().forEach((t) => t.stop());
+      void c?.close();
     };
   }, [deviceId]);
 

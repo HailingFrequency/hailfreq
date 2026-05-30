@@ -172,7 +172,9 @@ export function registerIpcHandlers(): void {
       throw new Error("settings:setAudioDevices: outputDeviceId must be a string or undefined");
     }
     if (inputDeviceId !== undefined) settings.set("inputDeviceId", inputDeviceId);
+    else settings.delete("inputDeviceId");
     if (outputDeviceId !== undefined) settings.set("outputDeviceId", outputDeviceId);
+    else settings.delete("outputDeviceId");
   });
 
   ipcMain.handle("settings:setBridges", (_event, args: unknown): void => {

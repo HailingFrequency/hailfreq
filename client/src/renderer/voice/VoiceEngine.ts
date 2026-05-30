@@ -374,7 +374,16 @@ export class VoiceEngine {
   async getMicSource(): Promise<MediaStreamAudioSourceNode> {
     this.ensureAudio();
     if (!this.micStream) {
-      this.micStream = await navigator.mediaDevices.getUserMedia(micConstraints(this.inputDeviceId));
+      try {
+        this.micStream = await navigator.mediaDevices.getUserMedia(micConstraints(this.inputDeviceId));
+      } catch (err) {
+        if (this.inputDeviceId && err instanceof Error && err.name === "OverconstrainedError") {
+          console.warn("[VoiceEngine] persisted input device unavailable; falling back to default", err);
+          this.micStream = await navigator.mediaDevices.getUserMedia(micConstraints(undefined));
+        } else {
+          throw err;
+        }
+      }
     }
     if (!this.micSourceNode) {
       this.micSourceNode = this.audioCtx!.createMediaStreamSource(this.micStream);

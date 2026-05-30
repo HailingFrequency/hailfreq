@@ -181,7 +181,7 @@ export function Sidebar({
         <SettingsMenu
           inputDeviceId={inputDeviceId}
           outputDeviceId={outputDeviceId}
-          onChangeAudioDevices={(d) => onChangeAudioDevices?.(d)}
+          onChangeAudioDevices={onChangeAudioDevices ?? (() => {})}
           focusedAppPtt={focusedAppPtt}
           onSaveFocusedAppPtt={onSaveFocusedAppPtt}
           onClose={() => setSettingsOpen(false)}

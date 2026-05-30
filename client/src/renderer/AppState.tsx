@@ -183,7 +183,10 @@ function wireShareEngineEvents(
  * Probe stored credentials and start the Matrix client if valid.
  * Routes to "home" on success, "login" on failure/expiry.
  */
-async function initServer(entry: ServerEntry): Promise<ServerInstance> {
+async function initServer(
+  entry: ServerEntry,
+  audioDevices: { inputDeviceId?: string; outputDeviceId?: string },
+): Promise<ServerInstance> {
   const stored = await window.hailfreq.invoke("tokens:load", { serverId: entry.id });
   if (stored) {
     try {
@@ -196,8 +199,7 @@ async function initServer(entry: ServerEntry): Promise<ServerInstance> {
           homeserverUrl: stored.homeserverUrl,
         });
         const voiceEngine = new VoiceEngine(handle.client);
-        const settings = await window.hailfreq.invoke("settings:get");
-        void voiceEngine.setAudioDevices({ inputDeviceId: settings.inputDeviceId, outputDeviceId: settings.outputDeviceId });
+        void voiceEngine.setAudioDevices(audioDevices);
         const shareEngine = new ShareEngine(voiceEngine);
         return { entry, handle, voiceEngine, shareEngine, screen: { kind: "home" }, unreadCount: 0, crewBoardingToasts: [], activeShares: [], localShare: null };
       }
@@ -257,9 +259,13 @@ export function AppState() {
       const settings = await window.hailfreq.invoke("settings:get");
       if (cancelled) return;
 
+      const audioDevices = {
+        inputDeviceId: settings.inputDeviceId,
+        outputDeviceId: settings.outputDeviceId,
+      };
       const servers = new Map<string, ServerInstance>();
       for (const entry of settings.servers) {
-        const instance = await initServer(entry);
+        const instance = await initServer(entry, audioDevices);
         if (cancelled) return;
         // Wire ShareEngine events so active shares mirror into React state.
         // setState is stable across renders; the closures capture entry.id once.
@@ -654,7 +660,10 @@ export function AppState() {
 
   /** Called by AddServer screen after a new ServerEntry has been persisted. */
   const handleServerAdded = useCallback(async (entry: ServerEntry) => {
-    const instance = await initServer(entry);
+    const instance = await initServer(entry, {
+      inputDeviceId: stateRef.current.inputDeviceId,
+      outputDeviceId: stateRef.current.outputDeviceId,
+    });
     setState((s) => ({
       ...s,
       servers: new Map(s.servers).set(entry.id, instance),
@@ -723,8 +732,10 @@ export function AppState() {
 
         const handle = await startClient(creds);
         const voiceEngine = new VoiceEngine(handle.client);
-        const settings = await window.hailfreq.invoke("settings:get");
-        void voiceEngine.setAudioDevices({ inputDeviceId: settings.inputDeviceId, outputDeviceId: settings.outputDeviceId });
+        void voiceEngine.setAudioDevices({
+          inputDeviceId: stateRef.current.inputDeviceId,
+          outputDeviceId: stateRef.current.outputDeviceId,
+        });
         const shareEngine = new ShareEngine(voiceEngine);
         wireShareEngineEvents(shareEngine, serverId, setState);
 
