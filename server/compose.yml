@@ -112,11 +112,19 @@ services:
     image: docker.io/livekit/livekit-server:v1.7
     container_name: hailfreq-livekit
     restart: unless-stopped
-    command: --config /etc/livekit.yaml
+    # SECURITY (C2): API key/secret live in the bootstrap-generated secrets
+    # volume, NOT the host env — so the config is rendered at runtime from
+    # /run/secrets (mirrors the Synapse entrypoint). Without this, Compose
+    # interpolated the keys to empty strings and LiveKit booted unauthenticated.
+    entrypoint: ["/bin/sh", "/etc/livekit-entrypoint.sh"]
     network_mode: host  # required for ICE/UDP NAT traversal — see docs/deployment.md
+    volumes:
+      - hailfreq-secrets:/run/secrets:ro
     configs:
       - source: livekit_yaml
-        target: /etc/livekit.yaml
+        target: /etc/livekit.yaml.template
+      - source: livekit_entrypoint
+        target: /etc/livekit-entrypoint.sh
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
       interval: 15s
@@ -129,10 +137,17 @@ services:
     container_name: hailfreq-coturn
     restart: unless-stopped
     network_mode: host
+    # SECURITY (C2): render turnserver.conf at runtime from /run/secrets so the
+    # static-auth-secret is the real generated value (was empty → TURN accepted
+    # any credential).
+    entrypoint: ["/bin/sh", "/etc/coturn-entrypoint.sh"]
+    volumes:
+      - hailfreq-secrets:/run/secrets:ro
     configs:
       - source: turnserver_conf
-        target: /etc/coturn/turnserver.conf
-    command: ["-c", "/etc/coturn/turnserver.conf"]
+        target: /etc/coturn/turnserver.conf.template
+      - source: coturn_entrypoint
+        target: /etc/coturn-entrypoint.sh
     healthcheck:
       test: ["CMD-SHELL", "pidof turnserver"]
       interval: 30s
@@ -211,8 +226,19 @@ configs:
           header Content-Type application/json
           respond `{"m.server":"${HAILFREQ_SERVER_HOSTNAME}:443"}`
         }
+        handle /_matrix/federation/* {
+          # SECURITY (L3): federation is disabled (whitelist []); don't expose
+          # the endpoints (avoids version/existence leak to scanners).
+          respond 403
+        }
         handle /_matrix/* {
           reverse_proxy synapse:8008
+        }
+        handle /_synapse/admin/* {
+          # SECURITY (H5): the admin API must never be reachable from the public
+          # internet. Operators use it via the container-internal localhost:8008
+          # (e.g. `podman exec ... http://localhost:8008`), never through Caddy.
+          respond 403
         }
         handle /_synapse/* {
           reverse_proxy synapse:8008
@@ -224,8 +250,19 @@ configs:
       }
 
       ${HAILFREQ_SERVER_HOSTNAME} {
+        handle /_matrix/federation/* {
+          # SECURITY (L3): federation is disabled (whitelist []); don't expose
+          # the endpoints (avoids version/existence leak to scanners).
+          respond 403
+        }
         handle /_matrix/* {
           reverse_proxy synapse:8008
+        }
+        handle /_synapse/admin/* {
+          # SECURITY (H5): the admin API must never be reachable from the public
+          # internet. Operators use it via the container-internal localhost:8008
+          # (e.g. `podman exec ... http://localhost:8008`), never through Caddy.
+          respond 403
         }
         handle /_synapse/* {
           reverse_proxy synapse:8008
@@ -259,6 +296,9 @@ configs:
       #   udp/5349      — TURN over TLS (coturn standalone)
       #   tcp/5349      — TURN over TLS (coturn standalone)
       #   udp/50000-50100 — LiveKit media ports
+      # SECURITY (M9): do NOT open tcp/7880 on the host firewall — LiveKit's
+      # signaling/API is reached only via Caddy (/livekit/* on 443). 7880 is
+      # bound on the host for the local reverse-proxy hop, not public access.
       port: 7880
       bind_addresses:
         - "0.0.0.0"
@@ -271,7 +311,7 @@ configs:
         node_ip: "${HAILFREQ_PUBLIC_IP}"
 
       keys:
-        ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+        __LIVEKIT_API_KEY__: __LIVEKIT_API_SECRET__
 
       turn:
         enabled: false
@@ -288,7 +328,7 @@ configs:
         auto_create: true
 
       webhook:
-        api_key: ${LIVEKIT_API_KEY}
+        api_key: __LIVEKIT_API_KEY__
         urls: []
 
   turnserver_conf:
@@ -307,7 +347,7 @@ configs:
 
       # Long-term credential with shared secret (REST API style — Synapse/LiveKit generate temp creds)
       use-auth-secret
-      static-auth-secret=${TURN_SHARED_SECRET}
+      static-auth-secret=__TURN_SHARED_SECRET__
 
       total-quota=100
       bps-capacity=0
@@ -329,7 +369,9 @@ configs:
       fingerprint
 
       log-file=stdout
-      verbose
+      # SECURITY (L2): 'verbose' removed — it logged per-session peer/client IPs
+      # and timing (call metadata at odds with the privacy model). Re-add only
+      # for short-lived debugging.
 
   synapse_log_config:
     content: |
@@ -371,6 +413,30 @@ configs:
       cp /config/log.config /data/log.config
       echo "→ Starting Synapse"
       exec /start.py
+
+  livekit_entrypoint:
+    content: |
+      #!/bin/sh
+      set -e
+      echo "→ Rendering livekit.yaml from /run/secrets"
+      KEY=$$(cat /run/secrets/livekit_api_key)
+      SECRET=$$(cat /run/secrets/livekit_api_secret)
+      sed -e "s|__LIVEKIT_API_KEY__|$$KEY|g" \
+          -e "s|__LIVEKIT_API_SECRET__|$$SECRET|g" \
+          /etc/livekit.yaml.template > /tmp/livekit.yaml
+      echo "→ Starting LiveKit"
+      exec livekit-server --config /tmp/livekit.yaml
+
+  coturn_entrypoint:
+    content: |
+      #!/bin/sh
+      set -e
+      echo "→ Rendering turnserver.conf from /run/secrets"
+      SECRET=$$(cat /run/secrets/turn_shared_secret)
+      sed -e "s|__TURN_SHARED_SECRET__|$$SECRET|g" \
+          /etc/coturn/turnserver.conf.template > /tmp/turnserver.conf
+      echo "→ Starting coturn"
+      exec turnserver -c /tmp/turnserver.conf
 
   synapse_homeserver_yaml_template:
     content: |

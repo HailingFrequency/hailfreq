@@ -35,6 +35,11 @@ Open the following ports on the VPS firewall:
 | 49152–49999    | UDP      | coturn relay ports                      |
 | 50000–50100    | UDP      | LiveKit media ports                     |
 
+> **Do NOT open tcp/7880.** LiveKit binds its signaling/API on the host at
+> `:7880` for the local Caddy reverse-proxy hop only; clients reach it via
+> `https://<server>/livekit/*` on 443. Exposing 7880 publicly would bypass
+> Caddy. (Security review M9.)
+
 Example (`ufw`):
 
 ```bash

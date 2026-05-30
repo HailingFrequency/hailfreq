@@ -1,4 +1,15 @@
-"""Shared pytest fixtures for Hailfreq integration tests."""
+"""Shared pytest fixtures for Hailfreq integration tests.
+
+SECURITY (M8): these tests register users via Synapse's admin registration API,
+which needs SYNAPSE_REGISTRATION_SHARED_SECRET. This MUST be the secret of a
+*throwaway/test* Synapse — never a production deployment's. Obtain it from the
+test instance's secrets volume, e.g.:
+
+    podman exec hailfreq-bootstrap cat /run/secrets/synapse_registration_shared_secret
+
+and point HAILFREQ_TEST_HOMESERVER at that test instance. Avoid pasting a
+production secret into your shell (it lands in history / process listings).
+"""
 import os
 import secrets
 import time
