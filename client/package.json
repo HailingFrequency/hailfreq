@@ -17,7 +17,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "active-win": "^8.2.0",
+    "active-win": "^9.0.0",
     "aws-sdk": "file:./stubs/empty-package",
     "electron-store": "^10.0.0",
     "livekit-client": "^2.19.0",
