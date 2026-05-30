@@ -29,11 +29,11 @@ export function deriveScWatchStatus(input: ScWatchStatusInput): ScWatchStatusKin
 /** Human-readable age of the last Game.log line, e.g. "3s ago". */
 export function formatActivity(lastLineAt: number | null, now: number): string {
   if (lastLineAt === null) return "no activity yet";
-  const sec = Math.max(0, Math.round((now - lastLineAt) / 1000));
+  const sec = Math.max(0, Math.floor((now - lastLineAt) / 1000));
   if (sec < 1) return "just now";
   if (sec < 60) return `${sec}s ago`;
-  const min = Math.round(sec / 60);
+  const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
+  const hr = Math.floor(min / 60);
   return `${hr}h ago`;
 }

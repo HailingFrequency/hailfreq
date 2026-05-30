@@ -39,4 +39,22 @@ describe("formatActivity", () => {
   it("never returns a negative age", () => {
     expect(formatActivity(5000, 1000)).toBe("just now");
   });
+  it("treats the full first second as 'just now'", () => {
+    expect(formatActivity(0, 999)).toBe("just now");
+  });
+  it("rolls over to seconds at exactly one second", () => {
+    expect(formatActivity(0, 1000)).toBe("1s ago");
+  });
+  it("shows 59s just before the minute boundary", () => {
+    expect(formatActivity(0, 59_000)).toBe("59s ago");
+  });
+  it("rolls over to minutes at exactly one minute", () => {
+    expect(formatActivity(0, 60_000)).toBe("1m ago");
+  });
+  it("shows 59m just before the hour boundary", () => {
+    expect(formatActivity(0, 59 * 60_000)).toBe("59m ago");
+  });
+  it("rolls over to hours at exactly one hour", () => {
+    expect(formatActivity(0, 60 * 60_000)).toBe("1h ago");
+  });
 });
