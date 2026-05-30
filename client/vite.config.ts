@@ -136,17 +136,24 @@ export default defineConfig({
         vite: {
           build: {
             outDir: "dist-electron/preload",
-            // M1: the preload MUST be CJS for sandbox:true. vite-plugin-electron
-            // auto-builds a lib from `entry` and, because package.json is
-            // "type":"module", defaults it to ESM — which overrides a plain
-            // output.format and left an ESM `import` in index.cjs (sandboxed
-            // preloads can't use ESM → "Cannot use import statement outside a
-            // module"). Forcing build.lib.formats:["cjs"] makes the external
-            // `electron` import compile to require().
+            // M1: the preload MUST be CJS for sandbox:true (an ESM `import` →
+            // "Cannot use import statement outside a module" at preload load).
+            //
+            // vite-plugin-electron auto-builds a lib from `entry`, defaulting
+            // formats to ["es"] because package.json is "type":"module". Vite's
+            // mergeConfig CONCATENATES arrays, so our formats:["cjs"] merges to
+            // ["es","cjs"] — BOTH formats build. A constant fileName ("index.cjs")
+            // then makes both outputs target the same file, so they overwrite
+            // each other: `vite build` happened to let CJS win, but `vite`
+            // (serve/watch) let ESM win — breaking `npm run dev`, and a partial
+            // overwrite left a syntactically-broken hybrid ("Unexpected token").
+            //
+            // Fix: give each format a DISTINCT filename so they can't collide.
+            // Electron loads index.cjs (always CJS); index.mjs is unused output.
             lib: {
               entry: "src/preload/index.ts",
               formats: ["cjs"],
-              fileName: () => "index.cjs",
+              fileName: (format) => (format === "cjs" ? "index.cjs" : "index.mjs"),
             },
             rollupOptions: { external: ["electron"] },
           },
