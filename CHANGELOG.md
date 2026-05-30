@@ -54,6 +54,28 @@ Existing v0.2 deployments (including the running rpk.chat server) continue to op
 
 [kit-0.3.0]: https://github.com/HailingFrequency/hailfreq/releases/tag/kit-v0.3.0
 
+## [0.3.0] - 2026-05-30
+
+Security-hardening release. Remediates the findings from an internal multi-agent security review (complementing Intercept + Snyk). The headline fix is **C1**, a voice-E2EE bypass.
+
+### Security — client
+
+- **C1 (CRITICAL) — SFrame voice-key authorization.** The SFrame media-key *receive* path trusted any room member's key event, so a PL-0 member could publish an attacker-chosen key that every client would adopt — defeating voice end-to-end encryption. The receive path now ignores key events from senders below PL 50 (matching the rotation gate), skips Megolm decryption-failure events, and refuses to join a net rather than silently downgrading to unencrypted voice.
+- **Electron hardening:** `sandbox: true` re-enabled (preload rebuilt as CJS) + `@electron/fuses` (RunAsNode off, cookie encryption on, NODE_OPTIONS/inspect off, asar-only); a production Content-Security-Policy; `shell.openExternal` scheme validation; UUID validation on the token IPC (path-traversal fix); `will-navigate` restricted to the app bundle.
+- **No test backdoor in prod:** `HAILFREQ_TEST` is compiled out of production builds (it had exposed `window.__matrixHandle`/`__voiceEngine`).
+- **Recovery key:** `restoreFromRecoveryKey` selects the validating SSSS key instead of blindly the first.
+- **Input hardening:** parsed Game.log fields clamped; log-line length capped; `rsiVerified` documented + de-claimed in the UI as self-reported (not server-verified).
+
+### Dependencies
+
+- **matrix-js-sdk 35 → 38.4.0**, **tar pinned to ^7.5.11** (resolves 6 HIGH path-traversal CVEs), pytest/requests test deps bumped. `npm audit` production-clean.
+
+### Build
+
+- Fixed a packaging bug where the CJS empty-stub leaked into the ESM main bundle (`ReferenceError: module is not defined`) — the app now launches with `sandbox: true`.
+
+[0.3.0]: https://github.com/HailingFrequency/hailfreq/releases/tag/v0.3.0
+
 ## [0.2.0] - 2026-05-29
 
 First polish pass after initial deployment. Closes the gaps that prevented a fresh tester from getting end-to-end in a net without finding a second person.
