@@ -13,8 +13,10 @@ export function AudioSetupWizard({ onComplete }: Props) {
   const [outputDeviceId, setOutputDeviceId] = useState<string>("");
 
   async function persistAndFinish(_opts?: { defaultMode?: string; defaultKey?: string | null }) {
-    // Future: persist inputDeviceId / outputDeviceId / PTT defaults to settings.
-    // For v0.2 we just mark setup complete — per-net audio config still works.
+    await window.hailfreq.invoke("settings:setAudioDevices", {
+      inputDeviceId: inputDeviceId || undefined,
+      outputDeviceId: outputDeviceId || undefined,
+    });
     await window.hailfreq.invoke("settings:setAudioSetupComplete", { value: true });
     onComplete();
   }
