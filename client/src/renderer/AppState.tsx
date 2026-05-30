@@ -1043,6 +1043,19 @@ export function AppState() {
   );
 
   /**
+   * Save the global Game.log path from ⚙ Settings → Star Citizen. Persists to
+   * settings then updates state; the existing watcher effect (keyed on
+   * state.scInstallPath) starts/stops/replaces the tailer automatically.
+   */
+  const handleChangeScInstallPath = useCallback(
+    async (path: string | undefined): Promise<void> => {
+      await window.hailfreq.invoke("settings:setScInstallPath", { path });
+      setState((prev) => ({ ...prev, scInstallPath: path }));
+    },
+    [],
+  );
+
+  /**
    * Save the global bridge configuration. Called by the AdminBoard (Task 9)
    * when the user adds, edits, enables/disables, or removes a bridge.
    * Persists to settings then syncs into React state (which triggers the
@@ -1060,33 +1073,33 @@ export function AppState() {
   );
 
   /**
-   * Save per-server SC integration settings and (optionally) the global
-   * scInstallPath. Called by the ScIntegrationSettings panel via Sidebar.
+   * Save per-server SC integration settings. Called by the ScIntegrationSettings
+   * panel via Sidebar. The global Game.log path is now managed separately in
+   * ⚙ Settings → Star Citizen (handleChangeScInstallPath).
    */
   const handleSaveScIntegration = useCallback(
-    async (
-      serverId: string,
-      patch: { scIntegration: ScIntegrationSettings; scInstallPath: string | undefined },
-    ) => {
-      // Persist per-server integration settings
+    async (serverId: string, patch: { scIntegration: ScIntegrationSettings }) => {
       await window.hailfreq.invoke("servers:update", {
         serverId,
         patch: { scIntegration: patch.scIntegration },
       });
-
-      // Persist the global scInstallPath (top-level Settings key)
-      await window.hailfreq.invoke("settings:setScInstallPath", { path: patch.scInstallPath });
-
       setState((s) => {
         const existing = s.servers.get(serverId);
         if (!existing) return s;
-        const nextState = patchServer(s, serverId, {
+        return patchServer(s, serverId, {
           entry: { ...existing.entry, scIntegration: patch.scIntegration },
         });
-        return { ...nextState, scInstallPath: patch.scInstallPath };
       });
     },
     [],
+  );
+
+  const enabledServerNames = useMemo(
+    () =>
+      Array.from(state.servers.values())
+        .filter((s) => s.entry.scIntegration?.enabled)
+        .map((s) => s.entry.label),
+    [state.servers],
   );
 
   // -------------------------------------------------------------------------
@@ -1150,6 +1163,8 @@ export function AppState() {
         inputDeviceId={state.inputDeviceId}
         outputDeviceId={state.outputDeviceId}
         onChangeAudioDevices={handleChangeAudioDevices}
+        enabledServerNames={enabledServerNames}
+        onChangeScInstallPath={handleChangeScInstallPath}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (

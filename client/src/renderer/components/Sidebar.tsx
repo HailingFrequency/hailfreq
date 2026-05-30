@@ -22,11 +22,11 @@ interface SidebarProps {
   onToggleNotifications?: (serverId: string, enabled: boolean) => Promise<void>;
   onSaveScIntegration?: (
     serverId: string,
-    patch: { scIntegration: ScIntegrationSettings; scInstallPath: string | undefined },
+    patch: { scIntegration: ScIntegrationSettings },
   ) => Promise<void>;
   onSaveFocusedAppPtt?: (value: FocusedAppPttSettings) => Promise<void>;
   onReorder?: (orderedIds: string[]) => void;
-  /** Global Game.log path (passed through from AppState for the SC panel). */
+  /** Global Game.log path (forwarded to SettingsMenu → ScGameLogSettings). */
   scInstallPath?: string;
   /** Global focused-app PTT settings (passed through from AppState). */
   focusedAppPtt?: FocusedAppPttSettings;
@@ -35,6 +35,10 @@ interface SidebarProps {
   /** Currently selected audio output device (passed through from AppState). */
   outputDeviceId?: string;
   onChangeAudioDevices?: (d: { inputDeviceId?: string; outputDeviceId?: string }) => void;
+  /** Display names of servers with Ship Link enabled (for the SC settings status line). */
+  enabledServerNames?: string[];
+  /** Persist the global Game.log path (forwarded to SettingsMenu → ScGameLogSettings). */
+  onChangeScInstallPath?: (path: string | undefined) => Promise<void> | void;
 }
 
 export function Sidebar({
@@ -53,6 +57,8 @@ export function Sidebar({
   inputDeviceId,
   outputDeviceId,
   onChangeAudioDevices,
+  enabledServerNames,
+  onChangeScInstallPath,
 }: SidebarProps) {
   const [contextMenuFor, setContextMenuFor] = useState<ServerEntry | null>(null);
   const [scIntegrationFor, setScIntegrationFor] = useState<ServerEntry | null>(null);
@@ -170,9 +176,7 @@ export function Sidebar({
       )}
       {scIntegrationFor && onSaveScIntegration && (
         <ScIntegrationSettingsPanel
-          serverId={scIntegrationFor.id}
           scIntegration={scIntegrationFor.scIntegration}
-          scInstallPath={scInstallPath}
           onSave={(patch) => onSaveScIntegration(scIntegrationFor.id, patch)}
           onClose={() => setScIntegrationFor(null)}
         />
@@ -182,6 +186,9 @@ export function Sidebar({
           inputDeviceId={inputDeviceId}
           outputDeviceId={outputDeviceId}
           onChangeAudioDevices={onChangeAudioDevices ?? (() => {})}
+          enabledServerNames={enabledServerNames ?? []}
+          onChangeScInstallPath={onChangeScInstallPath ?? (() => {})}
+          scInstallPath={scInstallPath}
           focusedAppPtt={focusedAppPtt}
           onSaveFocusedAppPtt={onSaveFocusedAppPtt}
           onClose={() => setSettingsOpen(false)}
