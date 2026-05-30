@@ -7,7 +7,7 @@ import { registerHotkey, unregisterHotkey, listHotkeys } from "./globalHotkeys";
 import { registerHold, unregisterHold } from "./nativeKeyListener";
 import { listChirps, readChirp, openChirpFolder } from "./chirps";
 import { findScInstallCandidates, validateGameLogPath } from "./scInstallPath";
-import { startWatch, stopWatch } from "./scLogTail";
+import { startWatch, stopWatch, getWatchStatus } from "./scLogTail";
 import { getFocusedApp } from "./windowFocus";
 import { listSources } from "./desktopCapture";
 import type { FocusedAppInfo, DesktopCaptureSource } from "../shared/ipc";
@@ -108,6 +108,7 @@ export function registerIpcHandlers(): void {
     return startWatch(args.gameLogPath);
   });
   ipcMain.handle("sc:stopWatch", () => stopWatch());
+  ipcMain.handle("sc:watchStatus", () => getWatchStatus());
 
   ipcMain.handle("notify:show", (_event, opts: NotifyOptions): void => {
     showNotification(opts, () => BrowserWindow.getAllWindows()[0] ?? null);

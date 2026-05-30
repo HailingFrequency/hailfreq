@@ -84,6 +84,10 @@ export interface IpcChannels {
   "sc:pickGameLog": { args: []; result: string | null };
   "sc:startWatch": { args: [{ gameLogPath: string }]; result: void };
   "sc:stopWatch": { args: []; result: void };
+  "sc:watchStatus": {
+    args: [];
+    result: { watching: boolean; path: string | null; lastLineAt: number | null };
+  };
   "focus:get": { args: []; result: FocusedAppInfo };
   "settings:setFocusedAppPtt": { args: [{ focusedAppPtt: FocusedAppPttSettings }]; result: void };
   "settings:setBridges": { args: [{ bridges: BridgeConfig[] }]; result: void };
