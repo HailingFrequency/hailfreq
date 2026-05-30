@@ -175,6 +175,16 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ["matrix-js-sdk", "matrix-widget-api"],
+    // The Rust-crypto WASM package loads its .wasm via
+    // `WebAssembly.instantiateStreaming(fetch(new URL("./pkg/…wasm", import.meta.url)))`,
+    // which REQUIRES the response MIME to be application/wasm. If esbuild
+    // pre-bundles it (it's pulled in transitively by matrix-js-sdk above),
+    // the bundle moves to /node_modules/.vite/deps/ and that relative wasm URL
+    // resolves to nothing → the dev server returns the SPA index.html fallback
+    // (text/html) → "Incorrect response MIME type. Expected 'application/wasm'".
+    // Excluding it keeps the package un-bundled so `new URL(...)` points at the
+    // real served file, which Vite serves as application/wasm.
+    exclude: ["@matrix-org/matrix-sdk-crypto-wasm"],
     esbuildOptions: {
       define: { global: "globalThis" },
     },
