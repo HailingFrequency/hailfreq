@@ -20,6 +20,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stopWatch();
+  await fsp.rm(path.dirname(logPath), { recursive: true, force: true });
 });
 
 describe("getWatchStatus", () => {
@@ -45,7 +46,7 @@ describe("getWatchStatus", () => {
       await new Promise((r) => setTimeout(r, 50));
     }
     expect(getWatchStatus().lastLineAt).toBeTypeOf("number");
-  });
+  }, 5000);
 
   it("returns to not-watching after stopWatch", async () => {
     await startWatch(logPath);
