@@ -151,7 +151,10 @@ export function ScGameLogSettings({ scInstallPath, enabledServerNames, onChange 
           tone: "text-green-400",
         };
       case "not-watching":
-        return { text: "Not watching — Game.log not found at the configured path.", tone: "text-rose-400" };
+        return {
+          text: "Ship Link is enabled but not watching yet — make sure the server is connected and the Game.log path above is valid.",
+          tone: "text-amber-400",
+        };
     }
   })();
 
