@@ -22,7 +22,7 @@ interface SidebarProps {
   onToggleNotifications?: (serverId: string, enabled: boolean) => Promise<void>;
   onSaveScIntegration?: (
     serverId: string,
-    patch: { scIntegration: ScIntegrationSettings; scInstallPath: string | undefined },
+    patch: { scIntegration: ScIntegrationSettings },
   ) => Promise<void>;
   onSaveFocusedAppPtt?: (value: FocusedAppPttSettings) => Promise<void>;
   onReorder?: (orderedIds: string[]) => void;
@@ -178,7 +178,6 @@ export function Sidebar({
         <ScIntegrationSettingsPanel
           serverId={scIntegrationFor.id}
           scIntegration={scIntegrationFor.scIntegration}
-          scInstallPath={scInstallPath}
           onSave={(patch) => onSaveScIntegration(scIntegrationFor.id, patch)}
           onClose={() => setScIntegrationFor(null)}
         />
