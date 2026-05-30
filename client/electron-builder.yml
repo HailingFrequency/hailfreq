@@ -1,6 +1,8 @@
 appId: org.hailfreq.client
 productName: Hailfreq
 artifactName: Hailfreq-${version}-${arch}.${ext}
+# M1: flip Electron security fuses on the packed binary (see scripts/afterPack.cjs).
+afterPack: scripts/afterPack.cjs
 directories:
   output: release
 files:

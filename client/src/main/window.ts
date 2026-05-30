@@ -15,13 +15,13 @@ export function createMainWindow(): BrowserWindow {
     title: "Hailfreq",
     autoHideMenuBar: true,
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.mjs"),
+      preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      // sandbox: false because the preload is compiled as ESM (project "type":"module")
-      // and Electron's sandbox mode requires CJS preloads. contextIsolation=true
-      // provides the equivalent security guarantee for our threat model.
-      sandbox: false,
+      // M1: sandbox enabled. The preload is now built as CJS (index.cjs) and only
+      // requires `electron`, which a sandboxed preload supports. This adds
+      // Chromium's OS-level renderer sandbox on top of contextIsolation.
+      sandbox: true,
     },
   });
 
