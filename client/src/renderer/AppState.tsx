@@ -1043,6 +1043,19 @@ export function AppState() {
   );
 
   /**
+   * Save the global Game.log path from ⚙ Settings → Star Citizen. Persists to
+   * settings then updates state; the existing watcher effect (keyed on
+   * state.scInstallPath) starts/stops/replaces the tailer automatically.
+   */
+  const handleChangeScInstallPath = useCallback(
+    async (path: string | undefined): Promise<void> => {
+      await window.hailfreq.invoke("settings:setScInstallPath", { path });
+      setState((prev) => ({ ...prev, scInstallPath: path }));
+    },
+    [],
+  );
+
+  /**
    * Save the global bridge configuration. Called by the AdminBoard (Task 9)
    * when the user adds, edits, enables/disables, or removes a bridge.
    * Persists to settings then syncs into React state (which triggers the
@@ -1150,6 +1163,10 @@ export function AppState() {
         inputDeviceId={state.inputDeviceId}
         outputDeviceId={state.outputDeviceId}
         onChangeAudioDevices={handleChangeAudioDevices}
+        enabledServerNames={Array.from(state.servers.values())
+          .filter((s) => s.entry.scIntegration?.enabled)
+          .map((s) => s.entry.label)}
+        onChangeScInstallPath={handleChangeScInstallPath}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (

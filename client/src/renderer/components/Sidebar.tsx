@@ -35,6 +35,10 @@ interface SidebarProps {
   /** Currently selected audio output device (passed through from AppState). */
   outputDeviceId?: string;
   onChangeAudioDevices?: (d: { inputDeviceId?: string; outputDeviceId?: string }) => void;
+  /** Display names of servers with Ship Link enabled (for the SC settings status line). */
+  enabledServerNames?: string[];
+  /** Persist the global Game.log path from the SC settings section. */
+  onChangeScInstallPath?: (path: string | undefined) => Promise<void> | void;
 }
 
 export function Sidebar({
@@ -53,6 +57,8 @@ export function Sidebar({
   inputDeviceId,
   outputDeviceId,
   onChangeAudioDevices,
+  enabledServerNames,
+  onChangeScInstallPath,
 }: SidebarProps) {
   const [contextMenuFor, setContextMenuFor] = useState<ServerEntry | null>(null);
   const [scIntegrationFor, setScIntegrationFor] = useState<ServerEntry | null>(null);
@@ -182,6 +188,9 @@ export function Sidebar({
           inputDeviceId={inputDeviceId}
           outputDeviceId={outputDeviceId}
           onChangeAudioDevices={onChangeAudioDevices ?? (() => {})}
+          enabledServerNames={enabledServerNames ?? []}
+          onChangeScInstallPath={onChangeScInstallPath ?? (() => {})}
+          scInstallPath={scInstallPath}
           focusedAppPtt={focusedAppPtt}
           onSaveFocusedAppPtt={onSaveFocusedAppPtt}
           onClose={() => setSettingsOpen(false)}
