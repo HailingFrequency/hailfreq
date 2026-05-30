@@ -63,8 +63,13 @@ async function readNewBytes(state: WatchState): Promise<void> {
       // Split on \n; keep partial trailing line in buffer
       const lines = state.buffer.split(/\r?\n/);
       state.buffer = lines.pop() ?? "";
+      // L4: cap line length. Drop a partial trailing line that has grown past the
+      // cap with no newline (so the buffer can't grow unbounded from a malformed
+      // or maliciously-huge log line), and skip over-long complete lines.
+      const MAX_LINE = 8192;
+      if (state.buffer.length > MAX_LINE) state.buffer = "";
       for (const line of lines) {
-        if (line.length > 0) {
+        if (line.length > 0 && line.length <= MAX_LINE) {
           broadcast("sc:logLine", { line });
         }
       }

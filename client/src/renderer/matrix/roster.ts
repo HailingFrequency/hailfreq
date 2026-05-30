@@ -11,9 +11,13 @@ export interface RosterMember {
   joinedNets: Set<string>;
   /** Presence: "online" | "offline" | "unavailable" (per Matrix presence). */
   presence: string;
-  /** Cached RSI-verified flag (populated when CitizenID claim is available — see Task 9). */
+  /**
+   * Cached RSI claim flag from another user's CitizenID account-data.
+   * SECURITY (M6): self-published and spoofable — an UNVERIFIED claim, not proof.
+   * Never gate authorization on this. See CitizenIdProfileClaim.rsiVerified.
+   */
   rsiVerified: boolean;
-  /** Cached RSI handle (for the verified badge). */
+  /** Cached RSI handle (self-reported; see rsiVerified caveat). */
   rsiHandle: string | null;
 }
 

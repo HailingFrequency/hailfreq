@@ -101,8 +101,11 @@ export function AdminRoster({
                 <div className="flex items-center gap-2">
                   <span className="truncate text-slate-100">{m.displayName}</span>
                   {m.rsiVerified && (
-                    <span className="rounded bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
-                      ✓ RSI
+                    <span
+                      className="rounded bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300"
+                      title="Self-reported via CitizenID account-data; not server-verified"
+                    >
+                      RSI?
                     </span>
                   )}
                   {isAdmin && (
