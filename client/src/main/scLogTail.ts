@@ -16,6 +16,8 @@ import { promises as fsp } from "node:fs";
 
 interface WatchState {
   path: string;
+  /** Timestamp (ms) of the last Game.log line broadcast; null until first line. */
+  lastLineAt: number | null;
   watcher: fs.FSWatcher | null;
   offset: number;
   buffer: string;
@@ -70,6 +72,7 @@ async function readNewBytes(state: WatchState): Promise<void> {
       if (state.buffer.length > MAX_LINE) state.buffer = "";
       for (const line of lines) {
         if (line.length > 0 && line.length <= MAX_LINE) {
+          state.lastLineAt = Date.now();
           broadcast("sc:logLine", { line });
         }
       }
@@ -105,6 +108,7 @@ export async function startWatch(gameLogPath: string): Promise<void> {
 
   const state: WatchState = {
     path: gameLogPath,
+    lastLineAt: null,
     watcher: null,
     offset: initialSize,
     buffer: "",
@@ -143,4 +147,16 @@ export async function stopWatch(): Promise<void> {
     if (active._teardown) active._teardown();
     active = null;
   }
+}
+
+export interface ScWatchStatus {
+  watching: boolean;
+  path: string | null;
+  lastLineAt: number | null;
+}
+
+/** Snapshot of the tailer state for the Settings status line. */
+export function getWatchStatus(): ScWatchStatus {
+  if (!active) return { watching: false, path: null, lastLineAt: null };
+  return { watching: true, path: active.path, lastLineAt: active.lastLineAt };
 }
