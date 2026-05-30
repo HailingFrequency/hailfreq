@@ -63,7 +63,9 @@ if (typeof globalThis.require === 'undefined') {
 function cspPlugin(): Plugin {
   const CSP = [
     "default-src 'self'",
-    "script-src 'self'",
+    // 'wasm-unsafe-eval' is required by matrix-js-sdk's Rust crypto (WASM E2EE).
+    // It permits WebAssembly compilation only — NOT general eval()/string-to-code.
+    "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "media-src 'self' blob: mediastream:",
