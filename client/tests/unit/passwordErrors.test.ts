@@ -24,4 +24,12 @@ describe("mapPasswordChangeError", () => {
   it("falls back to a generic message for unknown errors", () => {
     expect(mapPasswordChangeError(new Error("network"))).toBe("Couldn't change password. Please try again.");
   });
+  it("caps an over-long server message at 200 chars", () => {
+    const long = "x".repeat(500);
+    expect(mapPasswordChangeError({ errcode: "M_UNKNOWN", data: { error: long } }).length).toBe(200);
+  });
+  it("falls through to generic when the server error is whitespace-only", () => {
+    expect(mapPasswordChangeError({ errcode: "M_UNKNOWN", data: { error: "   " } }))
+      .toBe("Couldn't change password. Please try again.");
+  });
 });

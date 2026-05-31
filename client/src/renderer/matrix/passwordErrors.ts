@@ -20,6 +20,9 @@ interface MatrixishError {
 export function mapPasswordChangeError(err: unknown): string {
   const e = (err ?? {}) as MatrixishError;
   if (e.errcode === "M_FORBIDDEN") return "Current password is incorrect.";
-  if (e.errcode && e.data?.error) return e.data.error; // server policy message (e.g. too short / weak)
+  // Server policy message (e.g. too short / weak), capped so a malformed/hostile
+  // homeserver can't flood the UI; trimmed so a whitespace-only error falls through.
+  const serverMsg = e.data?.error?.trim();
+  if (e.errcode && serverMsg) return serverMsg.slice(0, 200);
   return "Couldn't change password. Please try again.";
 }
