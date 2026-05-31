@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, useCallback, type
 import type { BridgeConfig, FocusedAppPttSettings, ScIntegrationSettings, ServerEntry } from "@shared/types";
 import type { StoredCredentials } from "@shared/ipc";
 import type { ClientHandle } from "./matrix/client";
-import { startClient } from "./matrix/client";
+import { startClient, changePassword } from "./matrix/client";
 import { subscribeToVerificationRequests, availableMethods } from "./matrix/verification";
 import type { VerificationMethodChoice } from "./matrix/verification";
 import { RoomEvent } from "matrix-js-sdk";
@@ -1094,6 +1094,15 @@ export function AppState() {
     [],
   );
 
+  const handleChangePassword = useCallback(
+    async (serverId: string, currentPassword: string, newPassword: string): Promise<void> => {
+      const client = stateRef.current.servers.get(serverId)?.handle?.client;
+      if (!client) throw new Error("Not signed in to this server");
+      await changePassword(client, currentPassword, newPassword);
+    },
+    [],
+  );
+
   const enabledServerNames = useMemo(
     () =>
       Array.from(state.servers.values())
@@ -1165,6 +1174,7 @@ export function AppState() {
         onChangeAudioDevices={handleChangeAudioDevices}
         enabledServerNames={enabledServerNames}
         onChangeScInstallPath={handleChangeScInstallPath}
+        onChangePassword={handleChangePassword}
       />
       <div className="flex-1 overflow-hidden">
         {globalScreen.kind === "adding-server" ? (

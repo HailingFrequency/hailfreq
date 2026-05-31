@@ -10,11 +10,12 @@ interface Props {
   onRename: (newLabel: string) => Promise<void>;
   onToggleNotifications?: (enabled: boolean) => Promise<void>;
   onOpenScIntegration?: () => void;
+  onChangePassword?: () => void;
 }
 
 type MenuState = "initial" | "renaming" | "confirming";
 
-export function ServerContextMenu({ server, onClose, onRemove, onRename, onToggleNotifications, onOpenScIntegration }: Props) {
+export function ServerContextMenu({ server, onClose, onRemove, onRename, onToggleNotifications, onOpenScIntegration, onChangePassword }: Props) {
   const [menuState, setMenuState] = useState<MenuState>("initial");
   const [renameInput, setRenameInput] = useState(server.label);
   const [busy, setBusy] = useState(false);
@@ -127,6 +128,11 @@ export function ServerContextMenu({ server, onClose, onRemove, onRename, onToggl
               {onOpenScIntegration && (
                 <Button variant="ghost" onClick={onOpenScIntegration}>
                   Star Citizen integration…
+                </Button>
+              )}
+              {onChangePassword && server.lastLoginMethod === "local" && (
+                <Button variant="ghost" onClick={onChangePassword}>
+                  Change password…
                 </Button>
               )}
               <Button variant="ghost" onClick={() => setMenuState("confirming")}>
