@@ -137,10 +137,11 @@ export async function loginWithToken(
  */
 export async function changePassword(
   client: MatrixClient,
-  userId: string,
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
+  const userId = client.getUserId();
+  if (!userId) throw new Error("Not signed in");
   await client.setPassword(
     { type: "m.login.password", identifier: { type: "m.id.user", user: userId }, password: currentPassword },
     newPassword,
