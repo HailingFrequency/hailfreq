@@ -19,7 +19,7 @@
   "dependencies": {
     "active-win": "^8.2.0",
     "aws-sdk": "file:./stubs/empty-package",
-    "electron-store": "^10.0.0",
+    "electron-store": "^11.0.2",
     "livekit-client": "^2.19.0",
     "matrix-js-sdk": "^38.2.0",
     "mock-aws-s3": "file:./stubs/empty-package",
