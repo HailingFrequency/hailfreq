@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { ScIntegrationSettings, FocusedAppPttSettings } from "@shared/types";
 import type { ServerEntry } from "@shared/types";
+import { ChangePasswordModal } from "../screens/ChangePasswordModal";
 import { ServerIcon } from "./ServerIcon";
 import { ServerContextMenu } from "./ServerContextMenu";
 import { ScIntegrationSettings as ScIntegrationSettingsPanel } from "../screens/ScIntegrationSettings";
@@ -39,6 +40,8 @@ interface SidebarProps {
   enabledServerNames?: string[];
   /** Persist the global Game.log path (forwarded to SettingsMenu → ScGameLogSettings). */
   onChangeScInstallPath?: (path: string | undefined) => Promise<void> | void;
+  /** Change the local-account password for a server. */
+  onChangePassword?: (serverId: string, currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 export function Sidebar({
@@ -59,9 +62,11 @@ export function Sidebar({
   onChangeAudioDevices,
   enabledServerNames,
   onChangeScInstallPath,
+  onChangePassword,
 }: SidebarProps) {
   const [contextMenuFor, setContextMenuFor] = useState<ServerEntry | null>(null);
   const [scIntegrationFor, setScIntegrationFor] = useState<ServerEntry | null>(null);
+  const [changePasswordFor, setChangePasswordFor] = useState<ServerEntry | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Track the server being dragged over for drop-target highlighting
   const dragOverIdRef = useRef<string | null>(null);
@@ -172,6 +177,14 @@ export function Sidebar({
                 }
               : undefined
           }
+          onChangePassword={
+            onChangePassword
+              ? () => {
+                  setChangePasswordFor(contextMenuFor);
+                  setContextMenuFor(null);
+                }
+              : undefined
+          }
         />
       )}
       {scIntegrationFor && onSaveScIntegration && (
@@ -179,6 +192,12 @@ export function Sidebar({
           scIntegration={scIntegrationFor.scIntegration}
           onSave={(patch) => onSaveScIntegration(scIntegrationFor.id, patch)}
           onClose={() => setScIntegrationFor(null)}
+        />
+      )}
+      {changePasswordFor && onChangePassword && (
+        <ChangePasswordModal
+          onSubmit={(current, next) => onChangePassword(changePasswordFor.id, current, next)}
+          onClose={() => setChangePasswordFor(null)}
         />
       )}
       {settingsOpen && onSaveFocusedAppPtt && (

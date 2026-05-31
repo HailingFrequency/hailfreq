@@ -130,6 +130,26 @@ export async function loginWithToken(
 }
 
 /**
+ * Change the local-account password for a signed-in client. Uses Matrix
+ * user-interactive auth: the current password is submitted inline as an
+ * m.login.password stage, so the user re-confirms it. logoutDevices=false
+ * keeps other sessions signed in.
+ */
+export async function changePassword(
+  client: MatrixClient,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const userId = client.getUserId();
+  if (!userId) throw new Error("Not signed in");
+  await client.setPassword(
+    { type: "m.login.password", identifier: { type: "m.id.user", user: userId }, password: currentPassword },
+    newPassword,
+    false,
+  );
+}
+
+/**
  * Probe the homeserver for the list of supported login flows.
  * Used by the login screen to decide whether to show the CitizenID button
  * (only if `m.login.sso` with `org.matrix.msc3824.delegated_oidc_compatibility`
