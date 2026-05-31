@@ -52,9 +52,9 @@ export function ChangePasswordModal({ onSubmit, onClose }: Props) {
               <Input label="New password" type="password" value={next}
                 onChange={(e) => { setNext(e.target.value); setError(""); }} disabled={busy} />
               <Input label="Confirm new password" type="password" value={confirm}
-                onChange={(e) => { setConfirm(e.target.value); setError(""); }} disabled={busy}
-                error={error} />
+                onChange={(e) => { setConfirm(e.target.value); setError(""); }} disabled={busy} />
             </div>
+            {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}
             <div className="mt-4 flex gap-3">
               <Button onClick={() => void handleSave()} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
               <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
