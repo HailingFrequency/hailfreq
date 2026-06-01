@@ -126,7 +126,12 @@ services:
       - hailfreq
 
   livekit:
-    image: docker.io/livekit/livekit-server:v1.7
+    # Pinned to a specific patch (not floating v1.x) so prod upgrades are a
+    # deliberate, reviewable, one-line change. Bumped 1.7→1.12 because the
+    # livekit-client 2.x bundled in the desktop app uses the /rtc/v1 signalling
+    # path, which LiveKit server < 1.8 lacks (404) — breaking track publish
+    # (screen-share / mic) while subscribe limped along on the legacy path.
+    image: docker.io/livekit/livekit-server:v1.12.0
     container_name: hailfreq-livekit
     restart: unless-stopped
     depends_on:
