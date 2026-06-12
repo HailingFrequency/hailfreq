@@ -42,7 +42,7 @@ export function timelineToMessages(room: Room, ownUserId: string): ChatMessage[]
       eventId: event.getId() ?? "",
       senderId,
       senderName,
-      body: content.body as string,
+      body: String(content.body ?? ""),
       timestamp: event.getTs(),
       isOwn: senderId === ownUserId,
     });

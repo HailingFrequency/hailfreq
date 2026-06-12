@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
 import { Button } from "./Button";
 import { Input } from "./Input";
@@ -34,6 +34,17 @@ export function CreateOperationDialog({
   const [fieldErrors, setFieldErrors] = useState<string[]>([]);
   const [serviceError, setServiceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Reset local state when the modal is opened/closed
+  useEffect(() => {
+    if (!open) {
+      setName("");
+      setDescription("");
+      setScheduledStart("");
+      setFieldErrors([]);
+      setServiceError(null);
+    }
+  }, [open]);
 
   if (!open) return null;
 

@@ -93,6 +93,7 @@ export function InviteToOperationModal({
 
   if (!open) return null;
 
+  // Filter with empty query: homeserver search already filters by term; this pass marks already-invited members.
   const filteredMembers = filterInvitableMembers(searchResults, "", alreadyInRoster);
 
   function toggleSelection(userId: string) {
