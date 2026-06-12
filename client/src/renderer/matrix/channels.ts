@@ -111,6 +111,38 @@ function baseInitialState(
 }
 
 /**
+ * Link a newly-created room as an m.space.child of the given net Space.
+ *
+ * Logs the room id before attempting the link so it is recoverable from logs
+ * if the link fails. On failure throws an Error whose message includes both
+ * the orphaned room id and the netId, and whose `roomId` property carries the
+ * orphaned room id for programmatic recovery.
+ */
+async function linkRoomToNet(
+  client: MatrixClient,
+  netId: string,
+  newRoomId: string,
+): Promise<void> {
+  console.debug(`[channels] linking room ${newRoomId} to net ${netId}`);
+  try {
+    await client.sendStateEvent(
+      netId,
+      "m.space.child" as any,
+      { via: viaFromRoomId(netId) },
+      newRoomId,
+    );
+  } catch (err) {
+    throw Object.assign(
+      new Error(
+        `[channels] failed to link room ${newRoomId} to net ${netId}: ${String(err)}. ` +
+          `Orphaned room id: ${newRoomId}`,
+      ),
+      { roomId: newRoomId },
+    );
+  }
+}
+
+/**
  * Create a new text channel as a child of the given net Space.
  * Returns the TextChannel descriptor.
  */
@@ -128,13 +160,7 @@ export async function createTextChannel(
 
   const newRoomId: string = create.room_id;
 
-  // Link as a Space child on the parent net
-  await client.sendStateEvent(
-    netId,
-    "m.space.child" as any,
-    { via: viaFromRoomId(netId) },
-    newRoomId,
-  );
+  await linkRoomToNet(client, netId, newRoomId);
 
   return {
     id: newRoomId,
@@ -163,13 +189,7 @@ export async function createVoiceChannel(
 
   const newRoomId: string = create.room_id;
 
-  // Link as a Space child on the parent net
-  await client.sendStateEvent(
-    netId,
-    "m.space.child" as any,
-    { via: viaFromRoomId(netId) },
-    newRoomId,
-  );
+  await linkRoomToNet(client, netId, newRoomId);
 
   return {
     id: newRoomId,

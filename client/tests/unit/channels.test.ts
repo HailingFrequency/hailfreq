@@ -55,7 +55,7 @@ function makeRoom(
 function makeHierarchyRoom(
   roomId: string,
   name: string,
-  opts: { channelType?: "text" | "voice"; topic?: string; encrypted?: boolean } = {},
+  opts: { topic?: string } = {},
 ) {
   // Represents an IHierarchyRoom as returned by getRoomHierarchy
   return {
@@ -201,6 +201,7 @@ describe("getChannelsInNet", () => {
     expect(ch.name).toBe("general");
     expect(ch.type).toBe(ChannelType.TEXT);
     expect(ch.netId).toBe(netId);
+    expect(ch.topic).toBe("Daily ops");
     expect(ch.encrypted).toBe(true);
   });
 
@@ -341,5 +342,43 @@ describe("createVoiceChannel", () => {
       expect.objectContaining({ via: expect.any(Array) }),
       "!new-room:server.com",
     );
+  });
+});
+
+describe("orphaned room on space-link failure", () => {
+  it("createTextChannel throws with room id in message and as roomId property when sendStateEvent rejects", async () => {
+    const netId = "!net:server.com";
+    const createdRoomId = "!new-room:server.com";
+    const client = makeClient([]);
+    client.sendStateEvent.mockRejectedValueOnce(new Error("Forbidden"));
+
+    let thrown: unknown;
+    try {
+      await createTextChannel(client as any, netId, "general");
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeDefined();
+    expect((thrown as Error).message).toContain(createdRoomId);
+    expect((thrown as any).roomId).toBe(createdRoomId);
+  });
+
+  it("createVoiceChannel throws with room id in message and as roomId property when sendStateEvent rejects", async () => {
+    const netId = "!net:server.com";
+    const createdRoomId = "!new-room:server.com";
+    const client = makeClient([]);
+    client.sendStateEvent.mockRejectedValueOnce(new Error("Forbidden"));
+
+    let thrown: unknown;
+    try {
+      await createVoiceChannel(client as any, netId, "ops-voice");
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeDefined();
+    expect((thrown as Error).message).toContain(createdRoomId);
+    expect((thrown as any).roomId).toBe(createdRoomId);
   });
 });
