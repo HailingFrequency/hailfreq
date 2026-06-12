@@ -1,0 +1,8 @@
+services:
+  caddy:
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+
+  livekit-auth:
+    environment:
+      LIVEKIT_URL: "wss://localhost:8443/livekit"

@@ -24,7 +24,8 @@ export interface RosterEntry {
   strikeGroupId: string;
   shipId: string;
   circuitId: string; // Channel ID they're assigned to
-  role: string; // e.g., "Helm Operator", "Captain"
+  /** Free-form position title (e.g., "Helm Operator", "Captain"). */
+  role: string;
   status: RosterEntryStatus;
 }
 

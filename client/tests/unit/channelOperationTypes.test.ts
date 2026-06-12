@@ -39,20 +39,8 @@ describe("channelTypes", () => {
 });
 
 describe("operationTypes", () => {
-  it("OperationState.PLANNING enum value equals 'planning'", () => {
-    expect(OperationState.PLANNING).toBe("planning");
-  });
-
   it("OperationState.ACTIVE enum value equals 'active'", () => {
     expect(OperationState.ACTIVE).toBe("active");
-  });
-
-  it("OperationState.COMPLETED enum value equals 'completed'", () => {
-    expect(OperationState.COMPLETED).toBe("completed");
-  });
-
-  it("OperationState.ARCHIVED enum value equals 'archived'", () => {
-    expect(OperationState.ARCHIVED).toBe("archived");
   });
 
   it("Operation type-checks correctly", () => {

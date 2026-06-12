@@ -109,8 +109,8 @@ services:
       synapse:
         condition: service_healthy
     ports:
-      - "80:80"
-      - "443:443"
+      - "${CADDY_HTTP_PORT:-80}:${CADDY_HTTP_INTERNAL:-80}"
+      - "${CADDY_HTTPS_PORT:-443}:${CADDY_HTTPS_INTERNAL:-443}"
     environment:
       HAILFREQ_DOMAIN: ${HAILFREQ_DOMAIN:?HAILFREQ_DOMAIN not set}
       HAILFREQ_SERVER_HOSTNAME: ${HAILFREQ_SERVER_HOSTNAME:?HAILFREQ_SERVER_HOSTNAME not set}

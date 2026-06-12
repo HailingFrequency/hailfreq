@@ -18,5 +18,6 @@ export interface TextChannel extends Channel {
 
 export interface VoiceChannel extends Channel {
   type: ChannelType.VOICE;
-  connectedMembers: string[]; // User IDs currently in voice
+  /** Matrix user IDs currently connected to the voice channel (e.g., `@user:server`). */
+  connectedMembers: string[];
 }
