@@ -200,6 +200,22 @@ describe("getOperation", () => {
       /org\.hailfreq\.operation/,
     );
   });
+
+  it("throws with [operations] Unknown operation state when state is unrecognised", async () => {
+    const opContent = {
+      name: "Op Bogus",
+      description: "bad state",
+      state: "bogus",
+      commanderId: "@commander:server.com",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    };
+    const room = makeRoom("!op-bogus:server.com", { opContent });
+    const client = makeClient([room]);
+
+    await expect(getOperation(client as any, "!op-bogus:server.com")).rejects.toThrow(
+      /\[operations\] Unknown operation state: bogus/,
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -658,5 +674,38 @@ describe("inviteToOperation", () => {
     await expect(
       inviteToOperation(client as any, "!op1:server.com", ["@alice:server.com"]),
     ).resolves.toBeUndefined();
+  });
+
+  it("silently skips users already in the roster without error or duplicate entry", async () => {
+    // Alice is already in the roster
+    const opRoom = makeRoom("!op1:server.com", {
+      rosterContent: {
+        entries: [
+          {
+            userId: "@alice:server.com",
+            userName: "Alice",
+            strikeGroupId: "",
+            shipId: "",
+            circuitId: "",
+            role: "",
+            status: "pending",
+          },
+        ],
+      },
+    });
+    const invite = vi.fn().mockResolvedValue({});
+    const sendStateEvent = vi.fn().mockResolvedValue({});
+    const client = makeClient([opRoom], { invite, sendStateEvent });
+
+    // Should resolve without error even though alice is already enrolled
+    await expect(
+      inviteToOperation(client as any, "!op1:server.com", ["@alice:server.com"]),
+    ).resolves.toBeUndefined();
+
+    // invite must NOT have been called for alice
+    expect(invite).not.toHaveBeenCalledWith("!op1:server.com", "@alice:server.com");
+
+    // sendStateEvent must NOT have been called (no roster mutation)
+    expect(sendStateEvent).not.toHaveBeenCalled();
   });
 });

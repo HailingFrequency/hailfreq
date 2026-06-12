@@ -17,6 +17,11 @@ function contentToOperation(
   operationId: string,
   content: Record<string, unknown>,
 ): Operation {
+  const knownStates = Object.values(OperationState) as string[];
+  if (!knownStates.includes(String(content.state))) {
+    throw new Error(`[operations] Unknown operation state: ${content.state}`);
+  }
+
   return {
     id: operationId,
     name: String(content.name ?? ""),
@@ -220,6 +225,8 @@ export function getRoster(client: MatrixClient, operationId: string): Roster {
 /**
  * Add a new entry to the operation's roster.
  * Rejects with a descriptive Error if the userId is already present.
+ *
+ * NOTE: This is a read-modify-write operation on a Matrix state event; concurrent writers will silently lose updates; a single admin writer is assumed.
  */
 export async function addRosterEntry(
   client: MatrixClient,
@@ -250,6 +257,8 @@ export async function addRosterEntry(
  * Update specific fields on a roster entry identified by userId.
  * Throws a descriptive Error if the userId is not found in the roster.
  * Builds a new array/object — does not mutate existing data.
+ *
+ * NOTE: This is a read-modify-write operation on a Matrix state event; concurrent writers will silently lose updates; a single admin writer is assumed.
  */
 export async function updateRosterEntry(
   client: MatrixClient,
@@ -297,6 +306,16 @@ export async function inviteToOperation(
 
   for (const userId of userIds) {
     try {
+      // Skip users that are already in the roster — re-inviting is a no-op on
+      // Matrix, but addRosterEntry would throw; silently skip instead.
+      const existingEntries = readRosterEntries(client, operationId) ?? [];
+      if (existingEntries.some((e) => e.userId === userId)) {
+        console.debug(
+          `[operations] Skipping invite for ${userId} — already in roster for operation ${operationId}`,
+        );
+        continue;
+      }
+
       // Attempt to get display name cheaply; fall back to userId on any error
       let userName = userId;
       try {
