@@ -242,7 +242,7 @@ describe("abbreviateOpName", () => {
     expect(abbreviateOpName("OpBrAvO", 7)).toBe("OPBRAVO");
   });
 
-  it("name of exactly default maxLen=6 is not truncated", () => {
+  it("name longer than default maxLen=6 is truncated", () => {
     const result = abbreviateOpName("Foxtrot");
     // "Foxtrot" is 7 chars > 6, so truncated to "FOXTRO"
     expect(result).toBe("FOXTRO");

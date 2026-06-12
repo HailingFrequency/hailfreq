@@ -89,19 +89,15 @@ export function ModeTabBar({
           ))}
 
           {/* Archived operations — rendered dimmed at the bottom */}
-          {archived.length > 0 && (
-            <>
-              {archived.map((op) => (
-                <OperationChip
-                  key={op.id}
-                  operation={op}
-                  selected={op.id === selectedOperationId}
-                  dimmed={true}
-                  onSelect={onSelectOperation}
-                />
-              ))}
-            </>
-          )}
+          {archived.length > 0 && archived.map((op) => (
+            <OperationChip
+              key={op.id}
+              operation={op}
+              selected={op.id === selectedOperationId}
+              dimmed={true}
+              onSelect={onSelectOperation}
+            />
+          ))}
 
           {/* New Op button */}
           <button
@@ -147,7 +143,7 @@ function OperationChip({ operation, selected, dimmed, onSelect }: OperationChipP
       ]
         .filter(Boolean)
         .join(" ")}
-      aria-selected={selected}
+      aria-pressed={selected}
     >
       {/* Abbreviated name chip */}
       <span

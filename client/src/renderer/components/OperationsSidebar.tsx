@@ -2,6 +2,7 @@ import type { HierarchyNode } from "../matrix/hierarchyTypes";
 import type { Operation } from "../matrix/operationTypes";
 import { flattenForOperations } from "../matrix/hierarchyFlattener";
 import { operationStateBadge } from "./sidebarModeHelpers";
+import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { ChannelList } from "./ChannelList";
 
 export interface OperationsSidebarProps {
@@ -11,14 +12,6 @@ export interface OperationsSidebarProps {
   expandedIds: Set<string>;
   onSelectChannel: (id: string) => void;
   onToggleExpand: (id: string) => void;
-}
-
-function SectionHeader({ label }: { label: string }) {
-  return (
-    <div className="px-3 pb-1 pt-2 text-xs uppercase tracking-wider text-slate-500">
-      {label}
-    </div>
-  );
 }
 
 /**
@@ -71,7 +64,7 @@ export function OperationsSidebar({
       {/* Broadcast Nets section */}
       {broadcastNets.length > 0 && (
         <section aria-label="Broadcast Nets">
-          <SectionHeader label="Broadcast Nets" />
+          <SidebarSectionHeader label="Broadcast Nets" />
           <ChannelList
             nodes={broadcastNets}
             selectedChannelId={selectedChannelId}
@@ -85,7 +78,7 @@ export function OperationsSidebar({
       {/* Admiral's Net (single node, rendered via ChannelList for consistency) */}
       {admiralsNet !== undefined && (
         <section aria-label="Admirals Net">
-          <SectionHeader label="Admirals Net" />
+          <SidebarSectionHeader label="Admirals Net" />
           <ChannelList
             nodes={[admiralsNet]}
             selectedChannelId={selectedChannelId}
@@ -99,7 +92,7 @@ export function OperationsSidebar({
       {/* Strike Groups section */}
       {strikeGroups.length > 0 && (
         <section aria-label="Strike Groups">
-          <SectionHeader label="Strike Groups" />
+          <SidebarSectionHeader label="Strike Groups" />
           <ChannelList
             nodes={strikeGroups}
             selectedChannelId={selectedChannelId}

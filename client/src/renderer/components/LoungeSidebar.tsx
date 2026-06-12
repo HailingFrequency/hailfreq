@@ -1,5 +1,6 @@
 import type { HierarchyNode } from "../matrix/hierarchyTypes";
 import { flattenForLounge } from "../matrix/hierarchyFlattener";
+import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { ChannelList } from "./ChannelList";
 
 export interface LoungeSidebarProps {
@@ -11,14 +12,6 @@ export interface LoungeSidebarProps {
   onSelectChannel: (id: string) => void;
   onToggleExpand: (id: string) => void;
   onJoinNet: (id: string) => void;
-}
-
-function SectionHeader({ label }: { label: string }) {
-  return (
-    <div className="px-3 pb-1 pt-2 text-xs uppercase tracking-wider text-slate-500">
-      {label}
-    </div>
-  );
 }
 
 /**
@@ -53,7 +46,7 @@ export function LoungeSidebar({
       {/* SHIPS section */}
       {ships.length > 0 && (
         <section aria-label="Ships">
-          <SectionHeader label="Ships" />
+          <SidebarSectionHeader label="Ships" />
           <ChannelList
             nodes={ships}
             selectedChannelId={selectedChannelId}
@@ -67,7 +60,7 @@ export function LoungeSidebar({
       {/* YOUR NETS section */}
       {yourNets.length > 0 && (
         <section aria-label="Your Nets">
-          <SectionHeader label="Your Nets" />
+          <SidebarSectionHeader label="Your Nets" />
           <ChannelList
             nodes={yourNets}
             selectedChannelId={selectedChannelId}
@@ -81,7 +74,7 @@ export function LoungeSidebar({
       {/* AVAILABLE TO JOIN section */}
       {availableToJoin.length > 0 && (
         <section aria-label="Available to Join">
-          <SectionHeader label="Available to Join" />
+          <SidebarSectionHeader label="Available to Join" />
           <ul className="list-none m-0 p-0">
             {availableToJoin.map((net) => (
               <li key={net.id}>
