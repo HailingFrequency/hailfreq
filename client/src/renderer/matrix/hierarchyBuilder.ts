@@ -8,6 +8,8 @@
  *   - Priority:       org.hailfreq.net.priority  → content.value (number)
  *   - Net name:       org.hailfreq.net.name      → content.value (string; falls back to room.name)
  *
+ * A room is considered a net when it carries the org.hailfreq.net.priority state event.
+ *
  * # New marker introduced here (no prior state event existed)
  *   - Broadcast flag: org.hailfreq.net.broadcast → content.value (boolean)
  *     isBroadcast only lived on HierarchyNode; this is the first Matrix state
@@ -26,15 +28,11 @@
 import type { MatrixClient, Room } from "matrix-js-sdk";
 import type { HierarchyNode, HierarchyNodeType } from "./hierarchyTypes";
 import { getChannelType } from "./channels";
+import { NET_PRIORITY_EVENT, NET_NAME_EVENT, SHIP_TYPE_EVENT } from "./nets";
 
 // ---------------------------------------------------------------------------
-// Constants — reused from nets.ts (kept private; re-declared to avoid coupling
-// to unexported symbols in nets.ts)
+// Constants
 // ---------------------------------------------------------------------------
-
-const NET_PRIORITY_EVENT = "org.hailfreq.net.priority";
-const NET_NAME_EVENT = "org.hailfreq.net.name";
-const SHIP_TYPE_EVENT = "org.hailfreq.ship.type";
 
 /**
  * Broadcast-net flag.
@@ -94,7 +92,7 @@ function isNetRoom(room: Room): boolean {
  * Returns null when the room is not in the client cache.
  */
 function resolveRoom(client: MatrixClient, roomId: string): Room | null {
-  return client.getRoom(roomId) as Room | null;
+  return client.getRoom(roomId);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +121,7 @@ export async function buildNetNode(
   const broadcast = isBroadcastNet(netRoom);
 
   // Fetch channel children (rooms below this net Space)
-  let children: HierarchyNode[] = [];
+  const children: HierarchyNode[] = [];
   try {
     const hierarchy = await client.getRoomHierarchy(netId);
     for (const hr of hierarchy.rooms) {
@@ -135,15 +133,12 @@ export async function buildNetNode(
       const channelType = getChannelType(room);
       if (!channelType) continue;
 
-      children = [
-        ...children,
-        {
-          id: room.roomId,
-          name: room.name,
-          type: channelType as HierarchyNodeType,
-          children: [],
-        },
-      ];
+      children.push({
+        id: room.roomId,
+        name: room.name,
+        type: channelType as HierarchyNodeType,
+        children: [],
+      });
     }
   } catch (err) {
     console.error(`[hierarchyBuilder] Failed to get channels for net ${netId}:`, err);
