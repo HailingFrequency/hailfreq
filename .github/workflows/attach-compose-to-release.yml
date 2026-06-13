@@ -8,9 +8,8 @@ on:
   release:
     types: [created, published]
 
-# Default to read-only; the job below elevates to contents:write only for itself.
-permissions:
-  contents: read
+# Deny all by default; the job below elevates to contents:write only for itself.
+permissions: read-all
 
 jobs:
   attach-compose:
