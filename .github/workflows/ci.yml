@@ -12,13 +12,14 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# Read-only: these jobs only need the source, never write to the repo.
-permissions:
-  contents: read
+# Deny all by default; each job grants only what it needs.
+permissions: read-all
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -40,6 +41,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

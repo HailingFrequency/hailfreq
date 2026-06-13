@@ -18,9 +18,8 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# Least privilege by default; each job elevates only the scopes it needs.
-permissions:
-  contents: read
+# Deny all by default; each job elevates only the scopes it needs.
+permissions: read-all
 
 jobs:
   build:
