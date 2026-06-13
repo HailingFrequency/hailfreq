@@ -141,7 +141,7 @@ export async function buildNetNode(
       });
     }
   } catch (err) {
-    console.error(`[hierarchyBuilder] Failed to get channels for net ${netId}:`, err);
+    console.error("[hierarchyBuilder] Failed to get channels for net", netId, err);
   }
 
   const node: HierarchyNode = {
@@ -219,7 +219,7 @@ async function walkSpaceChildren(
     const result = await client.getRoomHierarchy(spaceId);
     hierarchyRooms = result.rooms ?? [];
   } catch (err) {
-    console.error(`[hierarchyBuilder] getRoomHierarchy failed for ${spaceId}:`, err);
+    console.error("[hierarchyBuilder] getRoomHierarchy failed for", spaceId, err);
     return [];
   }
 

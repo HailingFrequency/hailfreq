@@ -66,7 +66,7 @@ export async function getChannelsInNet(
 
     return channels;
   } catch (err) {
-    console.error(`[channels] getChannelsInNet failed for net ${netId}:`, err);
+    console.error("[channels] getChannelsInNet failed for net", netId, err);
     return [];
   }
 }
