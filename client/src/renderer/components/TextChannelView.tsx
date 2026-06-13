@@ -10,6 +10,8 @@ interface TextChannelViewProps {
   messages: ChatMessage[];
   onSend: (body: string) => Promise<void>;
   sending?: boolean;
+  /** When true, the channel header is suppressed (use when a parent already renders one). */
+  hideHeader?: boolean;
 }
 
 export function TextChannelView({
@@ -18,6 +20,7 @@ export function TextChannelView({
   messages,
   onSend,
   sending = false,
+  hideHeader = false,
 }: TextChannelViewProps) {
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -47,13 +50,15 @@ export function TextChannelView({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Channel header */}
-      <header className="flex flex-col border-b border-slate-800 px-4 py-3">
-        <h2 className="text-base font-semibold text-slate-100">
-          # {channelName}
-        </h2>
-        <p className="text-xs text-slate-500">{netName}</p>
-      </header>
+      {/* Channel header — suppressed when parent already renders one */}
+      {!hideHeader && (
+        <header className="flex flex-col border-b border-slate-800 px-4 py-3">
+          <h2 className="text-base font-semibold text-slate-100">
+            # {channelName}
+          </h2>
+          <p className="text-xs text-slate-500">{netName}</p>
+        </header>
+      )}
 
       {/* Scrollable message list */}
       <div className="flex-1 overflow-y-auto px-4 py-3">

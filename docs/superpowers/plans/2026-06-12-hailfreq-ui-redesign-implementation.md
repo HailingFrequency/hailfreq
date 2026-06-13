@@ -3153,3 +3153,23 @@ This implementation plan covers **8 major phases**:
 **2. Inline Execution** — Execute tasks in this session using executing-plans, batch execution with checkpoints
 
 **Which approach?**
+
+---
+
+## Deferred / Not Yet Wired
+
+The following items are known gaps as of the 2026-06-12 branch review. They are intentionally deferred and should be tracked here to avoid re-discovering them on future passes.
+
+- **Mode/sidebar persistence** — `mode` and `selectedOperationId` are session-only React state in `Home.tsx`. They reset on reload. No per-server settings field is reachable from `Home` to persist them; deferred until settings API is extended.
+
+- **Per-net "＋ text channel" creation UI** — `createTextChannel` and `createVoiceChannel` services exist in `client/src/renderer/matrix/channels.ts` but there is no UI to invoke them. The lounge and operations sidebars show existing channels only.
+
+- **Full/Compact view adaptation** — The spec references a Full/Compact layout toggle. No toggle or layout adaptation logic exists yet; the layout is fixed.
+
+- **Roster builder UI** — Crew can be invited to an operation via `InviteToOperationModal`, but there is no UI for assigning crew to specific ships or positions within an operation. The `org.hailfreq.opnode` events are read by `hierarchyBuilder` but nothing in the UI writes them yet.
+
+- **Available-to-Join discovery in LoungeSidebar** — `LoungeSidebar` receives an `availableNets` prop but it is hardcoded to `[]` in `Home.tsx`. The discovery query (public rooms or server-announced nets) is not yet implemented.
+
+- **Monitored-net bubbling** — `LoungeSidebar` accepts a `monitoredNetId` prop that is supposed to bubble the monitored net to the top of the list, but the prop is never passed from `Home.tsx`; the monitored net ID is not surfaced from `NetListPanel`/`VoiceEngine` to `Home`.
+
+- **Rail-level ModeTabBar placement** — Per the spec, the mode tab bar should live in the global multi-server `Sidebar` rail alongside server icons. Currently `ModeTabBar` is rendered inside `Home.tsx` as a per-server mini-rail, meaning each server gets its own mode switcher rather than a single global one.

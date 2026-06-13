@@ -10,13 +10,14 @@ import { LoungeSidebar } from "../components/LoungeSidebar";
 import { OperationsSidebar } from "../components/OperationsSidebar";
 import { ChannelMainPanel } from "../components/ChannelMainPanel";
 import { CreateOperationDialog } from "../components/CreateOperationDialog";
+import { InviteToOperationModal } from "../components/InviteToOperationModal";
 import { toggleExpanded } from "../components/channelListHelpers";
 import { resolveSelectedChannel } from "../components/selectedChannelHelpers";
 import { ChannelType } from "../matrix/channelTypes";
 import type { HierarchyNode } from "../matrix/hierarchyTypes";
 import type { Operation } from "../matrix/operationTypes";
 import { buildLoungeTree, buildOperationTree } from "../matrix/hierarchyBuilder";
-import { listOperations } from "../matrix/operations";
+import { listOperations, getRoster } from "../matrix/operations";
 import { watchOperationActivation, placeUserInOperation } from "../matrix/autoPlacement";
 import { AdminBoard } from "./AdminBoard";
 import {
@@ -123,6 +124,8 @@ export function Home({
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [creatingOp, setCreatingOp] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [rosterUserIds, setRosterUserIds] = useState<ReadonlySet<string>>(new Set());
 
   // Operations list for the rail selector — refreshed on Matrix state changes
   // (operation create/activate) and on dialog close.
@@ -221,6 +224,13 @@ export function Home({
 
   function handleToggleExpand(id: string) {
     setExpandedIds((prev) => toggleExpanded(prev, id));
+  }
+
+  function handleOpenInvite() {
+    if (!selectedOperationId) return;
+    const roster = getRoster(client, selectedOperationId);
+    setRosterUserIds(new Set(roster.entries.map((e) => e.userId)));
+    setInviteOpen(true);
   }
 
   // First-run audio wizard — null while loading, false = show wizard, true = done
@@ -432,6 +442,7 @@ export function Home({
               expandedIds={expandedIds}
               onSelectChannel={setSelectedChannelId}
               onToggleExpand={handleToggleExpand}
+              onInvite={selectedOperation ? handleOpenInvite : undefined}
             />
           ) : (
             <LoungeSidebar
@@ -463,17 +474,25 @@ export function Home({
       <CreateOperationDialog
         client={client}
         open={creatingOp}
-        onClose={() => {
-          setCreatingOp(false);
-          // Refresh the operations list after the dialog closes.
-          setOperations(listOperations(client));
-        }}
+        onClose={() => setCreatingOp(false)}
         onCreated={(op) => {
           setOperations(listOperations(client));
           setMode("ops");
           setSelectedOperationId(op.id);
         }}
       />
+
+      {inviteOpen && selectedOperation && (
+        <InviteToOperationModal
+          client={client}
+          open={inviteOpen}
+          operationId={selectedOperation.id}
+          operationName={selectedOperation.name}
+          alreadyInRoster={rosterUserIds}
+          onClose={() => setInviteOpen(false)}
+          onInvited={() => setInviteOpen(false)}
+        />
+      )}
     </div>
   );
 }

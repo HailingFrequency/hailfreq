@@ -12,6 +12,8 @@ export interface OperationsSidebarProps {
   expandedIds: Set<string>;
   onSelectChannel: (id: string) => void;
   onToggleExpand: (id: string) => void;
+  /** When provided, an "＋ Invite crew" button is shown in the operation header card. */
+  onInvite?: () => void;
 }
 
 /**
@@ -33,6 +35,7 @@ export function OperationsSidebar({
   expandedIds,
   onSelectChannel,
   onToggleExpand,
+  onInvite,
 }: OperationsSidebarProps) {
   if (operation === null) {
     return (
@@ -59,6 +62,15 @@ export function OperationsSidebar({
             {badge.label}
           </span>
         </div>
+        {onInvite && (
+          <button
+            type="button"
+            onClick={onInvite}
+            className="mt-1.5 w-full rounded border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition-colors"
+          >
+            ＋ Invite crew
+          </button>
+        )}
       </div>
 
       {/* Broadcast Nets section */}

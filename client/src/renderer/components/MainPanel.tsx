@@ -122,16 +122,13 @@ export function MainPanel({
       {/* ── Body ── */}
       <div className="flex-1 overflow-hidden">
         {channel.type === ChannelType.TEXT ? (
-          // Text view — delegate entirely to the existing TextChannelView.
-          // We do NOT render TextChannelView's own header (it duplicates ours),
-          // but TextChannelView is a self-contained component that includes its
-          // own header, so we wrap it and let it render as designed.
           <TextChannelView
             channelName={channel.name}
             netName={netName}
             messages={messages}
             onSend={onSend}
             sending={sending}
+            hideHeader
           />
         ) : voiceContent !== undefined ? (
           // Voice view — render whatever the parent provided (e.g. NetListPanel)
