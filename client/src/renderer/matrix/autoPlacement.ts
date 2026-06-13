@@ -59,7 +59,9 @@ export async function placeUserInOperation(
       joined.push(channelId);
     } catch (err) {
       console.error(
-        `[autoPlacement] Failed to join channel ${channelId} for user ${userId} in operation ${operationId}:`,
+        "[autoPlacement] Failed to join channel", channelId,
+        "for user", userId,
+        "in operation", operationId,
         err,
       );
       failed.push(channelId);

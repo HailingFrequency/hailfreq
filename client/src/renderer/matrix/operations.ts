@@ -345,7 +345,8 @@ export async function inviteToOperation(
       await addRosterEntry(client, operationId, entry);
     } catch (err) {
       console.error(
-        `[operations] Failed to invite ${userId} to operation ${operationId}:`,
+        "[operations] Failed to invite", userId,
+        "to operation", operationId,
         err,
       );
       failures.push(userId);
