@@ -1,0 +1,45 @@
+{
+	email test@localhost
+	http_port 8080
+	auto_https off
+}
+
+:8080 {
+	handle /.well-known/matrix/client {
+		header Content-Type application/json
+		header Access-Control-Allow-Origin *
+		respond `{"m.homeserver":{"base_url":"http://localhost:8080"}}`
+	}
+	handle /.well-known/matrix/server {
+		header Content-Type application/json
+		respond `{"m.server":"localhost:8080"}`
+	}
+	handle /_matrix/federation/* {
+		respond 403
+	}
+	handle /_matrix/* {
+		reverse_proxy synapse:8008
+	}
+	handle /_synapse/admin/* {
+		respond 403
+	}
+	handle /_synapse/* {
+		reverse_proxy synapse:8008
+	}
+	handle /lk-auth/* {
+		uri strip_prefix /lk-auth
+		reverse_proxy livekit-auth:8088
+	}
+	handle /livekit/* {
+		uri strip_prefix /livekit
+		reverse_proxy host.docker.internal:7880
+	}
+	handle {
+		respond "Hailfreq server." 200
+	}
+	encode gzip
+	log {
+		output stdout
+		format console
+	}
+}

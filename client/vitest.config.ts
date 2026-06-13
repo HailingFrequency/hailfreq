@@ -11,5 +11,7 @@ export default defineConfig({
       "@": resolve(__dirname, "src"),
       "@shared": resolve(__dirname, "src/shared"),
     },
+    // Prefer TypeScript sources over compiled .js artifacts in src/
+    extensions: [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs", ".cjs", ".json"],
   },
 });

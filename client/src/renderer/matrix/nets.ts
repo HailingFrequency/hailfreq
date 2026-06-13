@@ -17,13 +17,13 @@ export interface NetSummary {
   isShipNet: boolean;
 }
 
-const NET_PRIORITY_EVENT = "org.hailfreq.net.priority";
-const NET_NAME_EVENT = "org.hailfreq.net.name";
+export const NET_PRIORITY_EVENT = "org.hailfreq.net.priority";
+export const NET_NAME_EVENT = "org.hailfreq.net.name";
 const NET_COLOR_EVENT = "org.hailfreq.net.color";
 const NET_SELF_MONITOR_EVENT = "org.hailfreq.net.self-monitor";
 
 // Ship-net state event types (also used in ship-net section below)
-const SHIP_TYPE_EVENT = "org.hailfreq.ship.type";
+export const SHIP_TYPE_EVENT = "org.hailfreq.ship.type";
 const SHIP_OWNER_RSI_EVENT = "org.hailfreq.ship.owner-rsi";
 const SHIP_OWNER_MATRIX_EVENT = "org.hailfreq.ship.owner-matrix-id";
 

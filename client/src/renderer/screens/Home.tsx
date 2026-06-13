@@ -1,10 +1,24 @@
-import { useEffect, useRef, useState } from "react";
-import type { MatrixClient } from "matrix-js-sdk";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MatrixClient, Room } from "matrix-js-sdk";
 import type { BridgeConfig, FocusedAppPttSettings, ServerEntry } from "@shared/types";
 import type { BridgeRunnerStatus } from "../bridge/types";
 import { Button } from "../components/Button";
 import { NetListPanel } from "../components/NetListPanel";
 import { CreateNetDialog } from "../components/CreateNetDialog";
+import { ModeTabBar, type SidebarMode } from "../components/ModeTabBar";
+import { LoungeSidebar } from "../components/LoungeSidebar";
+import { OperationsSidebar } from "../components/OperationsSidebar";
+import { ChannelMainPanel } from "../components/ChannelMainPanel";
+import { CreateOperationDialog } from "../components/CreateOperationDialog";
+import { InviteToOperationModal } from "../components/InviteToOperationModal";
+import { toggleExpanded } from "../components/channelListHelpers";
+import { resolveSelectedChannel } from "../components/selectedChannelHelpers";
+import { ChannelType } from "../matrix/channelTypes";
+import type { HierarchyNode } from "../matrix/hierarchyTypes";
+import type { Operation } from "../matrix/operationTypes";
+import { buildLoungeTree, buildOperationTree } from "../matrix/hierarchyBuilder";
+import { listOperations, getRoster } from "../matrix/operations";
+import { watchOperationActivation, placeUserInOperation } from "../matrix/autoPlacement";
 import { AdminBoard } from "./AdminBoard";
 import {
   detectAdminCapabilities,
@@ -18,7 +32,7 @@ import type { VoiceEngine } from "../voice/VoiceEngine";
 import type { ShareEngine } from "../share/ShareEngine";
 import type { ActiveShareSummary, LocalShareState } from "../share/types";
 import { SharingStatusBar } from "../components/SharingStatusBar";
-import { listNets } from "../matrix/nets";
+import { listNets, subscribeToNetsChanges } from "../matrix/nets";
 import { AudioSetupWizard } from "./AudioSetupWizard";
 
 /** Max toasts shown simultaneously. */
@@ -99,6 +113,125 @@ export function Home({
   const [loggingOut, setLoggingOut] = useState(false);
   const [adminCaps, setAdminCaps] = useState<AdminCapabilities | null>(null);
   const [showAdmin, setShowAdmin] = useState(false);
+
+  // ── Text/voice channel + operations-mode UI state ──────────────────────────
+  // Session-only (mirrors how the existing "selected net" UI state is held as
+  // Home-local state). There is no per-server settings field reachable here for
+  // persisting `mode`/`selectedOperationId`, so these reset on reload — noted in
+  // the wiring report.
+  const [mode, setMode] = useState<SidebarMode>("lounge");
+  const [selectedOperationId, setSelectedOperationId] = useState<string | null>(null);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [creatingOp, setCreatingOp] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [rosterUserIds, setRosterUserIds] = useState<ReadonlySet<string>>(new Set());
+
+  // Operations list for the rail selector — refreshed on Matrix state changes
+  // (operation create/activate) and on dialog close.
+  const [operations, setOperations] = useState<Operation[]>([]);
+  // Lounge hierarchy (nets → channels) and operation hierarchy trees.
+  const [loungeNodes, setLoungeNodes] = useState<HierarchyNode[]>([]);
+  const [opNodes, setOpNodes] = useState<HierarchyNode[]>([]);
+
+  // Refresh the operations list from joined rooms when Matrix state changes.
+  useEffect(() => {
+    const refresh = () => setOperations(listOperations(client));
+    refresh();
+    return subscribeToNetsChanges(client, refresh);
+  }, [client]);
+
+  // Build the lounge hierarchy tree (nets + nested channels) whenever the net
+  // rooms change. netRooms are sourced the same way NetListPanel sources nets:
+  // listNets → resolve each matrixRoomId back to a Room object.
+  // subscribeToNetsChanges fires on bursty Matrix events and each rebuild issues
+  // one getRoomHierarchy per net, so the rebuild is debounced to collapse bursts.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const build = () => {
+      const netRooms = listNets(client)
+        .map((n) => client.getRoom(n.matrixRoomId))
+        .filter((r): r is Room => r != null);
+      void buildLoungeTree(client, netRooms).then((nodes) => {
+        if (!cancelled) setLoungeNodes(nodes);
+      });
+    };
+    const refresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(build, 150);
+    };
+    build();
+    const unsub = subscribeToNetsChanges(client, refresh);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      unsub();
+    };
+  }, [client]);
+
+  // Build the operation hierarchy tree when an operation is selected in ops mode.
+  useEffect(() => {
+    if (mode !== "ops" || !selectedOperationId) {
+      setOpNodes([]);
+      return;
+    }
+    let cancelled = false;
+    void buildOperationTree(client, selectedOperationId).then((nodes) => {
+      if (!cancelled) setOpNodes(nodes);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, mode, selectedOperationId]);
+
+  // Auto-placement: when an operation transitions to ACTIVE, join the local
+  // user's assigned channels per the roster. Subscribed for the lifetime of the
+  // home screen (i.e. while the Matrix client is ready) and torn down on unmount.
+  useEffect(() => {
+    const unsub = watchOperationActivation(client, (opId) => {
+      const userId = client.getUserId();
+      if (!userId) return;
+      void placeUserInOperation(client, opId, userId);
+    });
+    return unsub;
+  }, [client]);
+
+  // The currently-active hierarchy nodes (lounge vs ops) — used to resolve the
+  // selected channel into a Channel + parent-net name for the main panel.
+  const activeNodes = mode === "ops" ? opNodes : loungeNodes;
+
+  const selected = useMemo(
+    () =>
+      selectedChannelId
+        ? resolveSelectedChannel(client, selectedChannelId, activeNodes)
+        : null,
+    [client, selectedChannelId, activeNodes],
+  );
+
+  const selectedOperation =
+    operations.find((op) => op.id === selectedOperationId) ?? null;
+
+  function handleSetMode(next: SidebarMode) {
+    setMode(next);
+    setSelectedChannelId(null);
+  }
+
+  function handleSelectOperation(id: string) {
+    setSelectedOperationId(id);
+    setSelectedChannelId(null);
+  }
+
+  function handleToggleExpand(id: string) {
+    setExpandedIds((prev) => toggleExpanded(prev, id));
+  }
+
+  function handleOpenInvite() {
+    if (!selectedOperationId) return;
+    const roster = getRoster(client, selectedOperationId);
+    setRosterUserIds(new Set(roster.entries.map((e) => e.userId)));
+    setInviteOpen(true);
+  }
 
   // First-run audio wizard — null while loading, false = show wizard, true = done
   const [audioSetupComplete, setAudioSetupComplete] = useState<boolean | null>(null);
@@ -191,6 +324,49 @@ export function Home({
     );
   }
 
+  // The existing voice-centric net UI. Reused in two places:
+  //   1. As the default lounge-mode content (when no channel is selected), so
+  //      all current voice controls (monitor, PTT, share) stay reachable.
+  //   2. As the `voiceContent` slot of MainPanel when a VOICE channel is
+  //      selected, per the spec's text/voice toggle.
+  const netListPanel = (
+    <NetListPanel
+      client={client}
+      voiceEngine={voiceEngine}
+      shareEngine={shareEngine}
+      activeShares={activeShares}
+      localShare={localShare}
+      serverEntry={serverEntry}
+      onTransmittingChange={onTransmittingChange}
+      focusedAppPtt={focusedAppPtt}
+      bridges={bridges}
+      bridgeRunnerStatuses={bridgeRunnerStatuses}
+    />
+  );
+
+  // Decide what the main area renders:
+  //   - A channel is selected (text or voice) → MainPanel via ChannelMainPanel.
+  //       Voice channels forward the netListPanel into the voiceContent slot.
+  //   - Nothing selected → the existing NetListPanel (lounge) or the ops sidebar
+  //       prompt (handled by the sidebar itself), with NetListPanel as a stable
+  //       fallback so voice is always reachable.
+  let mainArea: React.ReactNode;
+  if (selected) {
+    mainArea = (
+      <ChannelMainPanel
+        client={client}
+        channel={selected.channel}
+        netName={selected.netName}
+        onSelectChannel={setSelectedChannelId}
+        voiceContent={
+          selected.channel.type === ChannelType.VOICE ? netListPanel : undefined
+        }
+      />
+    );
+  } else {
+    mainArea = <div className="h-full overflow-auto">{netListPanel}</div>;
+  }
+
   return (
     <div className="flex h-full flex-col">
       <SharingStatusBar
@@ -243,19 +419,46 @@ export function Home({
         </div>
       )}
 
-      <div className="flex-1 overflow-auto">
-        <NetListPanel
-          client={client}
-          voiceEngine={voiceEngine}
-          shareEngine={shareEngine}
-          activeShares={activeShares}
-          localShare={localShare}
-          serverEntry={serverEntry}
-          onTransmittingChange={onTransmittingChange}
-          focusedAppPtt={focusedAppPtt}
-          bridges={bridges}
-          bridgeRunnerStatuses={bridgeRunnerStatuses}
+      {/* Mode rail | channel sidebar | main area */}
+      <div className="flex min-h-0 flex-1">
+        {/* Mode tabs + operation selector (mini-rail, per the spec). Mounted in
+            Home rather than the global server Sidebar — see wiring notes. */}
+        <ModeTabBar
+          mode={mode}
+          onSetMode={handleSetMode}
+          operations={operations}
+          selectedOperationId={selectedOperationId}
+          onSelectOperation={handleSelectOperation}
+          onCreateOperation={() => setCreatingOp(true)}
         />
+
+        {/* Channel sidebar — lounge tree or operation hierarchy */}
+        <div className="w-60 shrink-0 overflow-y-auto border-r border-slate-800 bg-slate-950">
+          {mode === "ops" ? (
+            <OperationsSidebar
+              operation={selectedOperation}
+              nodes={opNodes}
+              selectedChannelId={selectedChannelId}
+              expandedIds={expandedIds}
+              onSelectChannel={setSelectedChannelId}
+              onToggleExpand={handleToggleExpand}
+              onInvite={selectedOperation ? handleOpenInvite : undefined}
+            />
+          ) : (
+            <LoungeSidebar
+              nodes={loungeNodes}
+              availableNets={[]}
+              selectedChannelId={selectedChannelId}
+              expandedIds={expandedIds}
+              onSelectChannel={setSelectedChannelId}
+              onToggleExpand={handleToggleExpand}
+              onJoinNet={(id) => void client.joinRoom(id)}
+            />
+          )}
+        </div>
+
+        {/* Main area — channel content or the existing net/voice panel */}
+        <div className="min-w-0 flex-1 overflow-hidden">{mainArea}</div>
       </div>
 
       {creating && (
@@ -265,6 +468,29 @@ export function Home({
           onCreated={(_roomId) => {
             // NetListPanel re-syncs from Matrix events; nothing else to do
           }}
+        />
+      )}
+
+      <CreateOperationDialog
+        client={client}
+        open={creatingOp}
+        onClose={() => setCreatingOp(false)}
+        onCreated={(op) => {
+          setOperations(listOperations(client));
+          setMode("ops");
+          setSelectedOperationId(op.id);
+        }}
+      />
+
+      {inviteOpen && selectedOperation && (
+        <InviteToOperationModal
+          client={client}
+          open={inviteOpen}
+          operationId={selectedOperation.id}
+          operationName={selectedOperation.name}
+          alreadyInRoster={rosterUserIds}
+          onClose={() => setInviteOpen(false)}
+          onInvited={() => setInviteOpen(false)}
         />
       )}
     </div>
