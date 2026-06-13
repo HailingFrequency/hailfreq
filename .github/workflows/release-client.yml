@@ -1,0 +1,128 @@
+name: Release client (build + SLSA provenance)
+
+# Builds the desktop client on native runners (Linux AppImage, Windows NSIS),
+# generates keyless SLSA build provenance for each binary via GitHub OIDC +
+# Sigstore (no signing key to manage), and attaches the binaries + their
+# provenance bundles to the GitHub Release for the tag.
+#
+# This makes releases reproducible in CI (no more hand-built local uploads) and
+# satisfies the OpenSSF Scorecard "Signed-Releases" check: each asset ships with
+# a `*.intoto.jsonl` provenance attestation, verifiable with `gh attestation verify`.
+#
+# Trigger: pushing a `v*` tag (e.g. `gh release create v0.3.1` pushes the tag).
+# `workflow_dispatch` allows a manual test build that does NOT publish (no tag).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Least privilege by default; each job elevates only the scopes it needs.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+            dist_script: dist:linux
+            glob: release/*.AppImage
+          - os: windows-latest
+            target: windows
+            dist_script: dist:windows
+            glob: release/*.exe
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write # keyless signing via Sigstore (OIDC)
+      attestations: write # record the build provenance attestation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Build renderer + main
+        working-directory: client
+        run: npm run build
+
+      - name: Package (${{ matrix.target }})
+        working-directory: client
+        run: npm run ${{ matrix.dist_script }}
+
+      - name: Locate built artifact
+        id: artifact
+        shell: bash
+        run: |
+          f=$(ls client/${{ matrix.glob }} | head -1)
+          if [ -z "$f" ]; then echo "No artifact matched client/${{ matrix.glob }}" >&2; exit 1; fi
+          echo "path=$f" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$f")" >> "$GITHUB_OUTPUT"
+
+      - name: Generate build provenance
+        id: attest
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: ${{ steps.artifact.outputs.path }}
+
+      - name: Stage binary + provenance
+        shell: bash
+        run: |
+          mkdir -p staging
+          cp "${{ steps.artifact.outputs.path }}" "staging/"
+          cp "${{ steps.attest.outputs.bundle-path }}" "staging/${{ steps.artifact.outputs.name }}.intoto.jsonl"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ matrix.target }}
+          path: staging/*
+          if-no-files-found: error
+
+  publish:
+    name: Attach to GitHub Release
+    needs: build
+    # Only publish for real tag pushes; a manual workflow_dispatch just produces
+    # the build artifacts above (useful for testing the pipeline).
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create/update the release and upload assets
+    steps:
+      - name: Download build outputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist-artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Upload assets to release ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          # Idempotent: create the release if a tag was pushed without one yet,
+          # then attach the binaries and their provenance bundles.
+          if ! gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release create "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --generate-notes \
+              --verify-tag
+          fi
+          gh release upload "${{ github.ref_name }}" dist-artifacts/* --clobber
