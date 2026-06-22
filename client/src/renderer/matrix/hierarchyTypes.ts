@@ -7,6 +7,9 @@ export interface HierarchyNode {
   children: HierarchyNode[];
   priority?: number; // For nets: sort priority
   isBroadcast?: boolean; // Broadcast nets (1MC, Fleet All-Hands)
+  /** Parent net's Matrix room ID — set on text/voice channel nodes so the UI
+   *  can look up LiveKit participants keyed by net ID. */
+  netId?: string;
 }
 
 export interface LoungeSidebarState {

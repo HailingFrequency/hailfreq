@@ -7,6 +7,27 @@ export interface ChannelListProps {
   expandedIds: Set<string>;
   onSelectChannel: (id: string) => void;
   onToggleExpand: (id: string) => void;
+  /**
+   * Optional handler to add a text channel to a net/ship node. When provided, a
+   * "+ Channel" button appears on hover for net/ship rows. When undefined, no
+   * button is shown (preserves backwards compat for OperationsSidebar).
+   */
+  onAddChannel?: (netId: string) => void;
+  /**
+   * Connected participants per net room ID: netId → [matrixUserId, ...].
+   * When provided, voice channel rows render participant names below them,
+   * matching Discord's sidebar UX.
+   */
+  voiceParticipants?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Active speakers per net room ID: netId → Set<matrixUserId>.
+   * Used to show a speaking indicator next to participant names.
+   */
+  activeSpeakers?: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The local Matrix user ID — used to label the local participant as "you". */
+  localUserId?: string;
+  /** Display name resolver: matrixUserId → human-readable name. */
+  resolveDisplayName?: (userId: string) => string;
   /** Indentation depth — incremented on each recursive call. Defaults to 0. */
   depth?: number;
 }
@@ -22,6 +43,11 @@ interface ChannelListRowProps {
   expandedIds: Set<string>;
   onSelectChannel: (id: string) => void;
   onToggleExpand: (id: string) => void;
+  onAddChannel?: (netId: string) => void;
+  voiceParticipants?: ReadonlyMap<string, readonly string[]>;
+  activeSpeakers?: ReadonlyMap<string, ReadonlySet<string>>;
+  localUserId?: string;
+  resolveDisplayName?: (userId: string) => string;
   depth: number;
 }
 
@@ -31,6 +57,11 @@ function ChannelListRow({
   expandedIds,
   onSelectChannel,
   onToggleExpand,
+  onAddChannel,
+  voiceParticipants,
+  activeSpeakers,
+  localUserId,
+  resolveDisplayName,
   depth,
 }: ChannelListRowProps) {
   const hasChildren = node.children.length > 0;
@@ -38,6 +69,11 @@ function ChannelListRow({
   const isSelected = selectedChannelId === node.id;
   const selectable = isSelectableNode(node);
   const icon = nodeIcon(node);
+
+  // "+ Channel" affordance: only for net/ship structural nodes, and only when
+  // the caller wired up an onAddChannel handler.
+  const canAddChannel =
+    onAddChannel !== undefined && (node.type === "net" || node.type === "ship");
 
   // Indent: 12 px base + 16 px per depth level, matches the dense sidebar aesthetic
   const paddingLeft = 12 + depth * 16;
@@ -47,6 +83,12 @@ function ChannelListRow({
       onSelectChannel(node.id);
     } else {
       onToggleExpand(node.id);
+      // Discord-like: when expanding a net/ship, auto-select its voice child
+      // so the user lands on the voice channel immediately without a second click.
+      if (!isExpanded && node.children.length > 0) {
+        const voiceChild = node.children.find((c) => c.type === "voice");
+        if (voiceChild) onSelectChannel(voiceChild.id);
+      }
     }
   }
 
@@ -62,6 +104,11 @@ function ChannelListRow({
     }
   }
 
+  function handleAddChannelClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    onAddChannel?.(node.id);
+  }
+
   return (
     <li role="treeitem" aria-expanded={hasChildren ? isExpanded : undefined}>
       {/*
@@ -69,7 +116,7 @@ function ChannelListRow({
        * content button so we never nest an interactive element inside another.
        */}
       <div
-        className="flex w-full items-center"
+        className="group flex w-full items-center"
         style={{ paddingLeft }}
       >
         {/* Expand/collapse arrow — only shown when node has children */}
@@ -123,6 +170,19 @@ function ChannelListRow({
             </span>
           )}
         </button>
+
+        {/* "+ Channel" button — net/ship rows only, revealed on hover */}
+        {canAddChannel && (
+          <button
+            type="button"
+            onClick={handleAddChannelClick}
+            aria-label={`Add channel to ${node.name}`}
+            title={`Add channel to ${node.name}`}
+            className="shrink-0 ml-1 mr-2 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-500 opacity-0 transition-all hover:bg-brand-500/20 hover:text-brand-300 focus:opacity-100 group-hover:opacity-100 group-hover:text-brand-400"
+          >
+            ＋ Channel
+          </button>
+        )}
       </div>
 
       {/* Recursive children — only rendered when expanded */}
@@ -133,9 +193,47 @@ function ChannelListRow({
           expandedIds={expandedIds}
           onSelectChannel={onSelectChannel}
           onToggleExpand={onToggleExpand}
+          onAddChannel={onAddChannel}
+          voiceParticipants={voiceParticipants}
+          activeSpeakers={activeSpeakers}
+          localUserId={localUserId}
+          resolveDisplayName={resolveDisplayName}
           depth={depth + 1}
         />
       )}
+
+      {/* Discord-style: connected participants listed under an expanded voice channel */}
+      {node.type === "voice" && isExpanded === false && (() => {
+        const netId = node.netId ?? node.id.replace(/#voice$/, "");
+        const participants = voiceParticipants?.get(netId);
+        if (!participants || participants.length === 0) return null;
+        const speakers = activeSpeakers?.get(netId) ?? new Set<string>();
+        const participantIndent = paddingLeft + 20;
+        return (
+          <ul className="list-none m-0 p-0">
+            {participants.map((userId) => {
+              const isSelf = userId === localUserId;
+              const isSpeaking = speakers.has(userId);
+              const displayName = resolveDisplayName?.(userId) ?? userId.split(":")[0].replace("@", "");
+              return (
+                <li key={userId}>
+                  <div
+                    className="flex items-center gap-1.5 py-0.5 text-xs"
+                    style={{ paddingLeft: participantIndent }}
+                  >
+                    <span className={isSpeaking ? "text-green-400" : "text-slate-500"} aria-hidden="true">
+                      {isSpeaking ? "🔊" : "🎤"}
+                    </span>
+                    <span className={isSelf ? "font-semibold text-brand-300" : "text-slate-400"}>
+                      {displayName}{isSelf ? " (you)" : ""}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        );
+      })()}
     </li>
   );
 }
@@ -163,10 +261,13 @@ export function ChannelList({
   expandedIds,
   onSelectChannel,
   onToggleExpand,
+  onAddChannel,
+  voiceParticipants,
+  activeSpeakers,
+  localUserId,
+  resolveDisplayName,
   depth = 0,
 }: ChannelListProps) {
-  // Only the root list carries role="tree"; nested lists are role="group"
-  // per the ARIA tree pattern.
   const listRole = depth === 0 ? "tree" : "group";
 
   return (
@@ -179,6 +280,11 @@ export function ChannelList({
           expandedIds={expandedIds}
           onSelectChannel={onSelectChannel}
           onToggleExpand={onToggleExpand}
+          onAddChannel={onAddChannel}
+          voiceParticipants={voiceParticipants}
+          activeSpeakers={activeSpeakers}
+          localUserId={localUserId}
+          resolveDisplayName={resolveDisplayName}
           depth={depth}
         />
       ))}

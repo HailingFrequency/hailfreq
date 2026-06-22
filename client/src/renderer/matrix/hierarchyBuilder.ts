@@ -138,10 +138,26 @@ export async function buildNetNode(
         name: room.name,
         type: channelType as HierarchyNodeType,
         children: [],
+        netId,
       });
     }
   } catch (err) {
     console.error("[hierarchyBuilder] Failed to get channels for net", netId, err);
+  }
+
+  // Backwards-compat: a pre-existing non-Space net (or one whose hierarchy
+  // query returned nothing) has no child channels. Synthesize a single fallback
+  // voice child so the net is still expandable in the sidebar. The synthetic
+  // "#voice" suffix (not a real room ID) lets resolveSelectedChannel identify it
+  // as a fallback.
+  if (children.length === 0) {
+    children.push({
+      id: netId + "#voice",
+      name: "voice",
+      type: "voice" as HierarchyNodeType,
+      children: [],
+      netId,
+    });
   }
 
   const node: HierarchyNode = {

@@ -1,4 +1,5 @@
 import type { MatrixClient } from "matrix-js-sdk";
+import { createTextChannel, createVoiceChannel } from "./channels";
 
 export interface NetProperties {
   priority: number; // 0-100
@@ -71,9 +72,11 @@ export function listNets(client: MatrixClient): NetSummary[] {
 }
 
 /**
- * Create a new voice net (Matrix room with the required state events).
+ * Create a new voice net as a Matrix Space with the required state events,
+ * then create its child text ("general") and voice ("voice") channels.
  * Caller must have permission on the parent space/server to create rooms.
- * Returns the new room ID.
+ * Returns the new Space room ID (the net ID — the same ID the voice subsystem
+ * derives the LiveKit room from and reads the SFrame key from).
  */
 export async function createNet(
   client: MatrixClient,
@@ -110,10 +113,18 @@ export async function createNet(
   }
   const create = await client.createRoom({
     preset: "private_chat" as any,
+    creation_content: { type: "m.space" },
     name: props.name,
     initial_state: initialState,
   });
-  return create.room_id;
+  const spaceId = create.room_id;
+
+  // Create the default child channels under the Space so the sidebar tree has
+  // children to render/expand.
+  await createTextChannel(client, spaceId, "general", "General discussion");
+  await createVoiceChannel(client, spaceId, "voice");
+
+  return spaceId;
 }
 
 /** Update one or more net properties. Caller must have PL 100 in the room. */

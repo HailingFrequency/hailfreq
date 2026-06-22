@@ -9,6 +9,8 @@ import { ModeTabBar, type SidebarMode } from "../components/ModeTabBar";
 import { LoungeSidebar } from "../components/LoungeSidebar";
 import { OperationsSidebar } from "../components/OperationsSidebar";
 import { ChannelMainPanel } from "../components/ChannelMainPanel";
+import { VoiceChannelView } from "../components/VoiceChannelView";
+import { RosterPanel } from "../components/RosterPanel";
 import { CreateOperationDialog } from "../components/CreateOperationDialog";
 import { InviteToOperationModal } from "../components/InviteToOperationModal";
 import { toggleExpanded } from "../components/channelListHelpers";
@@ -32,7 +34,7 @@ import type { VoiceEngine } from "../voice/VoiceEngine";
 import type { ShareEngine } from "../share/ShareEngine";
 import type { ActiveShareSummary, LocalShareState } from "../share/types";
 import { SharingStatusBar } from "../components/SharingStatusBar";
-import { listNets, subscribeToNetsChanges } from "../matrix/nets";
+import { listNets, subscribeToNetsChanges, NET_PRIORITY_EVENT } from "../matrix/nets";
 import { AudioSetupWizard } from "./AudioSetupWizard";
 
 /** Max toasts shown simultaneously. */
@@ -133,6 +135,15 @@ export function Home({
   // Lounge hierarchy (nets → channels) and operation hierarchy trees.
   const [loungeNodes, setLoungeNodes] = useState<HierarchyNode[]>([]);
   const [opNodes, setOpNodes] = useState<HierarchyNode[]>([]);
+  // Nets the local user is invited to but has not yet joined ("Available to Join").
+  // On rpk.chat nets are private_chat, so they never surface via publicRooms;
+  // they arrive as room invites carrying the net priority state event.
+  const [availableNets, setAvailableNets] = useState<HierarchyNode[]>([]);
+
+  // Discord-style sidebar participant display: poll voiceEngine every 500 ms to
+  // build per-net participant and speaker maps for the lounge sidebar.
+  const [voiceParticipants, setVoiceParticipants] = useState<ReadonlyMap<string, readonly string[]>>(new Map());
+  const [activeSpeakers, setActiveSpeakers] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
 
   // Refresh the operations list from joined rooms when Matrix state changes.
   useEffect(() => {
@@ -140,6 +151,49 @@ export function Home({
     refresh();
     return subscribeToNetsChanges(client, refresh);
   }, [client]);
+
+  // Refresh the "Available to Join" list: rooms the local user is invited to
+  // (membership === "invite") that carry the net priority state event.
+  useEffect(() => {
+    const refresh = () => {
+      const nodes: HierarchyNode[] = client
+        .getRooms()
+        .filter((r) => r.getMyMembership() === "invite")
+        .filter((r) => r.currentState.getStateEvents(NET_PRIORITY_EVENT, ""))
+        .map((r) => ({
+          id: r.roomId,
+          name: r.name ?? r.roomId,
+          type: "net" as const,
+          children: [],
+        }));
+      setAvailableNets(nodes);
+    };
+    refresh();
+    return subscribeToNetsChanges(client, refresh);
+  }, [client]);
+
+  // Poll voiceEngine every 500 ms to refresh participant/speaker maps used by
+  // the lounge sidebar's Discord-style participant sub-rows.
+  useEffect(() => {
+    if (!voiceEngine) return;
+    const poll = () => {
+      const participants = new Map<string, readonly string[]>();
+      const speakers = new Map<string, ReadonlySet<string>>();
+      for (const node of loungeNodes) {
+        const netId = node.id;
+        const ids = voiceEngine.getConnectedParticipantIds(netId);
+        if (ids.length > 0) {
+          participants.set(netId, ids);
+          speakers.set(netId, new Set(voiceEngine.getActiveSpeakers(netId)));
+        }
+      }
+      setVoiceParticipants(participants);
+      setActiveSpeakers(speakers);
+    };
+    poll();
+    const id = setInterval(poll, 500);
+    return () => clearInterval(id);
+  }, [voiceEngine, loungeNodes]);
 
   // Build the lounge hierarchy tree (nets + nested channels) whenever the net
   // rooms change. netRooms are sourced the same way NetListPanel sources nets:
@@ -294,6 +348,16 @@ export function Home({
     await onAddToAllowlist(rsiHandle);
   }
 
+  /** Resolve a Matrix user ID to a display name for sidebar participant sub-rows. */
+  function resolveDisplayName(userId: string): string {
+    // Try to find the member in any joined room where we know them
+    for (const room of client.getRooms()) {
+      const member = room.getMember(userId);
+      if (member?.name) return member.name;
+    }
+    return userId.split(":")[0].replace("@", "");
+  }
+
   /** Resolve the display name for the net the local user is currently sharing to. */
   function resolveNetName(share: LocalShareState | null): string | null {
     if (!share) return null;
@@ -359,7 +423,18 @@ export function Home({
         netName={selected.netName}
         onSelectChannel={setSelectedChannelId}
         voiceContent={
-          selected.channel.type === ChannelType.VOICE ? netListPanel : undefined
+          selected.channel.type === ChannelType.VOICE ? (
+            <VoiceChannelView
+              client={client}
+              netId={selected.channel.netId}
+              netName={selected.netName}
+              channelName={selected.channel.name}
+              voiceEngine={voiceEngine}
+              serverEntry={serverEntry}
+              onTransmittingChange={onTransmittingChange}
+              focusedAppPtt={focusedAppPtt}
+            />
+          ) : undefined
         }
       />
     );
@@ -443,22 +518,37 @@ export function Home({
               onSelectChannel={setSelectedChannelId}
               onToggleExpand={handleToggleExpand}
               onInvite={selectedOperation ? handleOpenInvite : undefined}
+              onCreateOperation={() => setCreatingOp(true)}
             />
           ) : (
             <LoungeSidebar
+              client={client}
               nodes={loungeNodes}
-              availableNets={[]}
+              availableNets={availableNets}
               selectedChannelId={selectedChannelId}
               expandedIds={expandedIds}
               onSelectChannel={setSelectedChannelId}
               onToggleExpand={handleToggleExpand}
               onJoinNet={(id) => void client.joinRoom(id)}
+              voiceParticipants={voiceParticipants}
+              activeSpeakers={activeSpeakers}
+              localUserId={client.getSafeUserId() ?? undefined}
+              resolveDisplayName={resolveDisplayName}
             />
           )}
         </div>
 
         {/* Main area — channel content or the existing net/voice panel */}
         <div className="min-w-0 flex-1 overflow-hidden">{mainArea}</div>
+
+        {/* Roster — joined members of the selected channel's net */}
+        <div className="w-48 shrink-0 border-l border-slate-800 bg-slate-950">
+          <RosterPanel
+            client={client}
+            netId={selected?.channel.netId ?? null}
+            voiceEngine={voiceEngine}
+          />
+        </div>
       </div>
 
       {creating && (

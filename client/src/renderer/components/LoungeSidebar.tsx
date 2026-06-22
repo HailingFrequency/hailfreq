@@ -1,9 +1,13 @@
+import { useState } from "react";
+import type { MatrixClient } from "matrix-js-sdk";
 import type { HierarchyNode } from "../matrix/hierarchyTypes";
 import { flattenForLounge } from "../matrix/hierarchyFlattener";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { ChannelList } from "./ChannelList";
+import { CreateChannelDialog } from "./CreateChannelDialog";
 
 export interface LoungeSidebarProps {
+  client: MatrixClient;
   nodes: HierarchyNode[];
   availableNets: HierarchyNode[];
   monitoredNetId?: string;
@@ -12,6 +16,24 @@ export interface LoungeSidebarProps {
   onSelectChannel: (id: string) => void;
   onToggleExpand: (id: string) => void;
   onJoinNet: (id: string) => void;
+  /** Connected participants per net: netId → [matrixUserId, ...] */
+  voiceParticipants?: ReadonlyMap<string, readonly string[]>;
+  /** Active speakers per net: netId → Set<matrixUserId> */
+  activeSpeakers?: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Local Matrix user ID — shown as "you" in participant list */
+  localUserId?: string;
+  /** Display name resolver for participant sub-rows */
+  resolveDisplayName?: (userId: string) => string;
+}
+
+/** Depth-first search for a node by id across the hierarchy. */
+function findNodeById(nodes: HierarchyNode[], id: string): HierarchyNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = findNodeById(node.children, id);
+    if (found) return found;
+  }
+  return null;
 }
 
 /**
@@ -26,6 +48,7 @@ export interface LoungeSidebarProps {
  * All data derivation is delegated to flattenForLounge (pure, tested separately).
  */
 export function LoungeSidebar({
+  client,
   nodes,
   availableNets,
   monitoredNetId,
@@ -34,12 +57,21 @@ export function LoungeSidebar({
   onSelectChannel,
   onToggleExpand,
   onJoinNet,
+  voiceParticipants,
+  activeSpeakers,
+  localUserId,
+  resolveDisplayName,
 }: LoungeSidebarProps) {
+  const [addingChannelToNet, setAddingChannelToNet] = useState<string | null>(null);
+
   const { ships, yourNets, availableToJoin } = flattenForLounge(
     nodes,
     monitoredNetId,
     availableNets,
   );
+
+  const addingNetNode =
+    addingChannelToNet !== null ? findNodeById(nodes, addingChannelToNet) : null;
 
   return (
     <div className="flex flex-col gap-1 overflow-y-auto py-2">
@@ -53,6 +85,11 @@ export function LoungeSidebar({
             expandedIds={expandedIds}
             onSelectChannel={onSelectChannel}
             onToggleExpand={onToggleExpand}
+            onAddChannel={(netId) => setAddingChannelToNet(netId)}
+            voiceParticipants={voiceParticipants}
+            activeSpeakers={activeSpeakers}
+            localUserId={localUserId}
+            resolveDisplayName={resolveDisplayName}
           />
         </section>
       )}
@@ -67,6 +104,11 @@ export function LoungeSidebar({
             expandedIds={expandedIds}
             onSelectChannel={onSelectChannel}
             onToggleExpand={onToggleExpand}
+            onAddChannel={(netId) => setAddingChannelToNet(netId)}
+            voiceParticipants={voiceParticipants}
+            activeSpeakers={activeSpeakers}
+            localUserId={localUserId}
+            resolveDisplayName={resolveDisplayName}
           />
         </section>
       )}
@@ -95,6 +137,20 @@ export function LoungeSidebar({
             ))}
           </ul>
         </section>
+      )}
+
+      {/* Create-channel modal — rendered when a net/ship row's "+ Channel" is clicked */}
+      {addingChannelToNet !== null && (
+        <CreateChannelDialog
+          client={client}
+          netId={addingChannelToNet}
+          netName={addingNetNode?.name ?? "this net"}
+          onClose={() => setAddingChannelToNet(null)}
+          onCreated={(channelId) => {
+            setAddingChannelToNet(null);
+            onSelectChannel(channelId);
+          }}
+        />
       )}
     </div>
   );

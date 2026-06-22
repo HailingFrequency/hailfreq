@@ -14,6 +14,8 @@ export interface OperationsSidebarProps {
   onToggleExpand: (id: string) => void;
   /** When provided, an "＋ Invite crew" button is shown in the operation header card. */
   onInvite?: () => void;
+  /** When provided, a "＋ New Operation" button is shown in the empty state. */
+  onCreateOperation?: () => void;
 }
 
 /**
@@ -36,11 +38,21 @@ export function OperationsSidebar({
   onSelectChannel,
   onToggleExpand,
   onInvite,
+  onCreateOperation,
 }: OperationsSidebarProps) {
   if (operation === null) {
     return (
-      <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-slate-400">
-        Select an operation to view its structure.
+      <div className="flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="text-sm text-slate-400">No operations yet.</p>
+        {onCreateOperation && (
+          <button
+            type="button"
+            onClick={onCreateOperation}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500 transition-colors"
+          >
+            ⚡ New Operation
+          </button>
+        )}
       </div>
     );
   }
