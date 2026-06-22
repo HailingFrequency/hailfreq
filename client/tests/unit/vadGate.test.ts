@@ -2,23 +2,26 @@ import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 
 // VadGate uses Web Audio APIs which aren't available in the Node test
 // environment. We mock them minimally to assert state-machine behavior.
-// vi.stubGlobal is required in Vitest 4 — top-level global assignment is not
-// applied before module evaluation in the new runtime.
+// In Vitest 4, vi.fn() constructor mocks must use regular functions (not arrow
+// functions) since the implementation is called via `new` and arrow functions
+// are not valid constructors.
 
 beforeAll(() => {
   vi.stubGlobal(
     "AudioContext",
-    vi.fn().mockImplementation(() => ({
-      createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
-      createAnalyser: vi.fn().mockReturnValue({
-        fftSize: 1024,
-        connect: vi.fn(),
-        getFloatTimeDomainData: vi.fn(),
-      }),
-      close: vi.fn().mockResolvedValue(undefined),
-    })),
+    vi.fn(function () {
+      return {
+        createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
+        createAnalyser: vi.fn().mockReturnValue({
+          fftSize: 1024,
+          connect: vi.fn(),
+          getFloatTimeDomainData: vi.fn(),
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+    }),
   );
-  vi.stubGlobal("MediaStream", vi.fn());
+  vi.stubGlobal("MediaStream", vi.fn(function () {}));
 });
 
 afterAll(() => {
