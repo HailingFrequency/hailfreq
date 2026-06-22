@@ -119,7 +119,7 @@ export async function bootstrapSecretStorageWithNewKey(
   const prevGetSecretStorageKey = client.cryptoCallbacks.getSecretStorageKey;
   client.cryptoCallbacks.getSecretStorageKey = async ({ keys }, _name) => {
     if (capturedKey && capturedKeyId && keys[capturedKeyId]) {
-      return [capturedKeyId, capturedKey.privateKey];
+      return [capturedKeyId, capturedKey.privateKey as Uint8Array<ArrayBuffer>];
     }
     // Fall back to the original callback (or return null for fresh accounts)
     if (prevGetSecretStorageKey) {
@@ -257,20 +257,21 @@ export async function restoreFromRecoveryKey(
     if (candidateIds.length === 0) {
       return null;
     }
+    const keyBytesAB = keyBytes as Uint8Array<ArrayBuffer>;
     // M7: when more than one SSSS key exists (e.g. after a re-key), return the
     // key id our recovery key actually validates against rather than blindly
     // taking the first — picking the wrong id fails recovery with a misleading
     // error. Fall back to the first candidate if validation is unavailable.
     for (const id of candidateIds) {
       try {
-        if (await client.secretStorage.checkKey(keyBytes, keys[id] as never)) {
-          return [id, keyBytes];
+        if (await client.secretStorage.checkKey(keyBytesAB, keys[id] as never)) {
+          return [id, keyBytesAB];
         }
       } catch {
         break; // checkKey unavailable/threw — use the fallback below
       }
     }
-    return [candidateIds[0], keyBytes];
+    return [candidateIds[0], keyBytesAB];
   };
 
   try {
