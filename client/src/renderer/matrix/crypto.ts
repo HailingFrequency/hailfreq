@@ -117,13 +117,13 @@ export async function bootstrapSecretStorageWithNewKey(
   // under the new SSSS key, it can get the private key bytes from us.
   // This callback is updated once we know the keyId (from cacheSecretStorageKey).
   const prevGetSecretStorageKey = client.cryptoCallbacks.getSecretStorageKey;
-  client.cryptoCallbacks.getSecretStorageKey = async ({ keys }) => {
+  client.cryptoCallbacks.getSecretStorageKey = async ({ keys }, _name) => {
     if (capturedKey && capturedKeyId && keys[capturedKeyId]) {
       return [capturedKeyId, capturedKey.privateKey];
     }
     // Fall back to the original callback (or return null for fresh accounts)
     if (prevGetSecretStorageKey) {
-      return prevGetSecretStorageKey({ keys }, "");
+      return prevGetSecretStorageKey({ keys }, _name);
     }
     return null;
   };
@@ -252,7 +252,7 @@ export async function restoreFromRecoveryKey(
   //    we must return [keyId, privateKeyBytes] for whichever one we can supply.
   //    We return the first candidate key ID, supplying our decoded bytes.
   const previousCallback = client.cryptoCallbacks.getSecretStorageKey;
-  client.cryptoCallbacks.getSecretStorageKey = async ({ keys }) => {
+  client.cryptoCallbacks.getSecretStorageKey = async ({ keys }, _name) => {
     const candidateIds = Object.keys(keys);
     if (candidateIds.length === 0) {
       return null;
