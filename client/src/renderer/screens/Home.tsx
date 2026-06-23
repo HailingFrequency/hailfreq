@@ -154,6 +154,9 @@ export function Home({
   const [isTransmitting, setIsTransmitting] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; roomId: string } | null>(null);
   const pttRef = useRef<PttController | null>(null);
+  // Prevents concurrent handleVoiceChannelClick / handleVoiceChannelMonitor calls
+  // from racing when the user clicks multiple voice channels in quick succession.
+  const joiningRef = useRef(false);
 
   // Keep a live ref to focusedAppPtt so the PttController focus-gate closure
   // reads the current value without stale-closure issues.
@@ -410,46 +413,65 @@ export function Home({
   }
 
   async function handleVoiceChannelClick(netRoomId: string): Promise<void> {
-    if (!voiceEngine) return;
-    // No-op if already connected here
+    if (!voiceEngine || joiningRef.current) return;
     if (activeVoiceRoomId === netRoomId) return;
-    // Leave previous channel first
-    if (activeVoiceRoomId) {
-      await pttRef.current?.unbind(activeVoiceRoomId);
-      await voiceEngine.unmonitorNet(activeVoiceRoomId);
+    joiningRef.current = true;
+    try {
+      if (activeVoiceRoomId) {
+        await pttRef.current?.unbind(activeVoiceRoomId);
+        await voiceEngine.unmonitorNet(activeVoiceRoomId);
+        setActiveVoiceRoomId(null);
+      }
+      const net = listNets(client).find((n) => n.matrixRoomId === netRoomId);
+      if (!net) return;
+      try {
+        await voiceEngine.monitorNet({ matrixRoomId: netRoomId, priority: net.properties.priority ?? 0 });
+      } catch (err) {
+        console.error("[Home] Failed to join voice channel:", err);
+        return;
+      }
+      const keybind = serverEntry.voicePrefs?.keybinds[netRoomId] ?? null;
+      const pttMode = (serverEntry.voicePrefs?.pttModes[netRoomId] as PttMode | undefined) ?? "toggle";
+      if (keybind && pttRef.current) {
+        await pttRef.current.bind({ matrixRoomId: netRoomId, mode: pttMode, accelerator: keybind });
+      }
+      setActiveVoiceRoomId(netRoomId);
+      setIsMuted(false);
+      setIsMonitorOnly(false);
+    } finally {
+      joiningRef.current = false;
     }
-    const net = listNets(client).find((n) => n.matrixRoomId === netRoomId);
-    if (!net) return;
-    await voiceEngine.monitorNet({ matrixRoomId: netRoomId, priority: net.properties.priority ?? 0 });
-    // Bind stored PTT keybind if one exists for this net
-    const keybind = serverEntry.voicePrefs?.keybinds[netRoomId] ?? null;
-    const pttMode = (serverEntry.voicePrefs?.pttModes[netRoomId] as PttMode | undefined) ?? "toggle";
-    if (keybind && pttRef.current) {
-      await pttRef.current.bind({ matrixRoomId: netRoomId, mode: pttMode, accelerator: keybind });
-    }
-    setActiveVoiceRoomId(netRoomId);
-    setIsMuted(false);
-    setIsMonitorOnly(false);
   }
 
   async function handleVoiceChannelMonitor(netRoomId: string): Promise<void> {
-    if (!voiceEngine) return;
-    // If already connected to this net, just switch to monitor-only
+    if (!voiceEngine || joiningRef.current) return;
     if (activeVoiceRoomId === netRoomId) {
       await pttRef.current?.unbind(netRoomId);
       setIsMonitorOnly(true);
+      setIsMuted(false);
       return;
     }
-    if (activeVoiceRoomId) {
-      await pttRef.current?.unbind(activeVoiceRoomId);
-      await voiceEngine.unmonitorNet(activeVoiceRoomId);
+    joiningRef.current = true;
+    try {
+      if (activeVoiceRoomId) {
+        await pttRef.current?.unbind(activeVoiceRoomId);
+        await voiceEngine.unmonitorNet(activeVoiceRoomId);
+        setActiveVoiceRoomId(null);
+      }
+      const net = listNets(client).find((n) => n.matrixRoomId === netRoomId);
+      if (!net) return;
+      try {
+        await voiceEngine.monitorNet({ matrixRoomId: netRoomId, priority: net.properties.priority ?? 0 });
+      } catch (err) {
+        console.error("[Home] Failed to monitor voice channel:", err);
+        return;
+      }
+      setActiveVoiceRoomId(netRoomId);
+      setIsMonitorOnly(true);
+      setIsMuted(false);
+    } finally {
+      joiningRef.current = false;
     }
-    const net = listNets(client).find((n) => n.matrixRoomId === netRoomId);
-    if (!net) return;
-    await voiceEngine.monitorNet({ matrixRoomId: netRoomId, priority: net.properties.priority ?? 0 });
-    setActiveVoiceRoomId(netRoomId);
-    setIsMonitorOnly(true);
-    setIsMuted(false);
   }
 
   async function handleVoiceLeave(): Promise<void> {

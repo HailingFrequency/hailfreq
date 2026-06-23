@@ -243,8 +243,8 @@ function ChannelListRow({
         />
       )}
 
-      {/* Discord-style: connected participants listed under an expanded voice channel */}
-      {node.type === "voice" && isExpanded === false && (() => {
+      {/* Discord-style: participants listed under a voice channel whenever the row is visible */}
+      {node.type === "voice" && (() => {
         const netId = node.netId ?? node.id.replace(/#voice$/, "");
         const participants = voiceParticipants?.get(netId);
         if (!participants || participants.length === 0) return null;
