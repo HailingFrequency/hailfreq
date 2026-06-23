@@ -147,6 +147,11 @@ export class VoiceEngine {
     return ids;
   }
 
+  /** Returns the Matrix room ID of the net currently being transmitted on, or null. */
+  getActivePttNet(): string | null {
+    return this.activePttNet;
+  }
+
   /**
    * Get the live LiveKit Room for a monitored net, or null if not currently
    * connected. ShareEngine and any future media layer uses this to publish/
