@@ -6,6 +6,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Note: client and server kit version independently. Kit releases use the `kit-vX.Y.Z` tag prefix.
 
+## [0.3.1] - 2026-06-22
+
+Major feature release: text + voice channels, Discord-style participant display, settings, in-app password change, and security dependency updates.
+
+### Added
+
+- **Text + voice channels per net** — nets now create a `#general` text channel and a `voice` channel on formation; channels render in the Lounge sidebar just like Discord
+- **Discord-style participant sidebar** — connected users appear as sub-rows under the voice channel node with speaking indicators (🎤 green when active)
+- **Operations mode** — full PLANNING → ACTIVE → COMPLETED → ARCHIVED lifecycle; `⚡` tab opens an operations sidebar with roster, auto-placement on activation, and `+ New Operation` quick-action
+- **VoiceChannelView** — dedicated focused view for a voice channel (PTT button, monitor toggle, MicLevelBar, per-speaker list)
+- **RosterPanel** — right-side member list with live speaking indicators (polls every 250 ms)
+- **+ Channel button** — create additional text channels under any net from the sidebar
+- **Settings menu** — unified `⚙` panel with audio device picker (mic/speaker), live MicLevelBar, test tone, PTT focus toggle; persists and applies immediately
+- **Star Citizen section in Settings** — single home for `Game.log` path with Browse/Auto-detect/Clear; live Ship Link status line
+- **In-app change password** — per-server right-click → "Change password…" modal (local accounts only; hidden for CitizenID)
+- **CI: SLSA provenance** — every release binary now ships with a keyless `*.intoto.jsonl` attestation verifiable with `gh attestation verify`
+- **CI: PR lint + unit tests** — lint and 362-test suite run on every PR to master
+
+### Changed
+
+- Net creation now makes a Matrix Space with `#general` text + `voice` child channels (old nets use a backwards-compat `#voice` fallback)
+- Mode tabs 🏠 / ⚡ separate Lounge and Operations views; `LoungeSidebar` and `OperationsSidebar` replace the old flat channel list
+- MainPanel toggles between text channel view and voice channel view per selection
+
+### Security / Fixes
+
+- **matrix-js-sdk 38 → 41** — pulls in `matrix-sdk-crypto-wasm v18.3.1` security update
+- **react 18 → 19** — latest stable React
+- **fix: CWE-134** — replaced `console.error(formatString, ...args)` calls with separate argument form to eliminate format-string injection risk
+- **fix: esbuild** — pinned `esbuild ≥ 0.25.0` to clear dev-server SSRF advisory (not shipped in production builds)
+- **LiveKit server v1.7 → v1.12.0** (server-side; client AppImage unaffected)
+
+### Dependency bumps
+
+- vitest 2 → 4, electron-builder 25 → 26, GitHub Actions tooling (checkout, setup-node, upload/download-artifact, attest-build-provenance)
+
+[0.3.1]: https://github.com/HailingFrequency/hailfreq/releases/tag/v0.3.1
+
 ## [kit-0.3.1] - 2026-05-30
 
 Security-hardening + portability patch for the kit (internal security review). **Fixes a critical deploy bug (C2)** and makes the kit actually deployable on podman/podman-compose. Operators on kit-0.3.0 should redeploy from this kit.

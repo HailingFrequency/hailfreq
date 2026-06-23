@@ -120,6 +120,39 @@ export class VoiceEngine {
   }
 
   /**
+   * Snapshot of the identities currently active-speaking in a monitored net.
+   * Returns an empty array when the net is not monitored/connected. Used by
+   * the RosterPanel to render per-member speaking indicators by polling,
+   * since `on("activeSpeakersChanged")` is a single-handler subscription
+   * already claimed by VoiceChannelView.
+   */
+  getActiveSpeakers(matrixRoomId: string): string[] {
+    const net = this.nets.get(matrixRoomId);
+    return net ? Array.from(net.activeSpeakers) : [];
+  }
+
+  /**
+   * Snapshot of ALL participant identities (Matrix user IDs) currently
+   * connected to the LiveKit room for the given net. Includes the local user
+   * (when monitoring) and all remote participants. Safe to call on an interval
+   * for reactive sidebar rendering without requiring an event subscription.
+   */
+  getConnectedParticipantIds(matrixRoomId: string): string[] {
+    const net = this.nets.get(matrixRoomId);
+    if (!net) return [];
+    const ids: string[] = [this.client.getSafeUserId()];
+    for (const [identity] of net.connection.rawRoom.remoteParticipants) {
+      ids.push(identity);
+    }
+    return ids;
+  }
+
+  /** Returns the Matrix room ID of the net currently being transmitted on, or null. */
+  getActivePttNet(): string | null {
+    return this.activePttNet;
+  }
+
+  /**
    * Get the live LiveKit Room for a monitored net, or null if not currently
    * connected. ShareEngine and any future media layer uses this to publish/
    * subscribe additional tracks without duplicating the connection.

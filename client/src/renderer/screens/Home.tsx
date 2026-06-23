@@ -9,6 +9,8 @@ import { ModeTabBar, type SidebarMode } from "../components/ModeTabBar";
 import { LoungeSidebar } from "../components/LoungeSidebar";
 import { OperationsSidebar } from "../components/OperationsSidebar";
 import { ChannelMainPanel } from "../components/ChannelMainPanel";
+import { VoiceChannelView } from "../components/VoiceChannelView";
+import { RosterPanel } from "../components/RosterPanel";
 import { CreateOperationDialog } from "../components/CreateOperationDialog";
 import { InviteToOperationModal } from "../components/InviteToOperationModal";
 import { toggleExpanded } from "../components/channelListHelpers";
@@ -32,8 +34,10 @@ import type { VoiceEngine } from "../voice/VoiceEngine";
 import type { ShareEngine } from "../share/ShareEngine";
 import type { ActiveShareSummary, LocalShareState } from "../share/types";
 import { SharingStatusBar } from "../components/SharingStatusBar";
-import { listNets, subscribeToNetsChanges } from "../matrix/nets";
+import { listNets, subscribeToNetsChanges, NET_PRIORITY_EVENT } from "../matrix/nets";
 import { AudioSetupWizard } from "./AudioSetupWizard";
+import { RadioBar } from "../components/RadioBar";
+import { PttController, type PttMode } from "../voice/PttController";
 
 /** Max toasts shown simultaneously. */
 const MAX_CREW_TOASTS = 3;
@@ -133,6 +137,31 @@ export function Home({
   // Lounge hierarchy (nets → channels) and operation hierarchy trees.
   const [loungeNodes, setLoungeNodes] = useState<HierarchyNode[]>([]);
   const [opNodes, setOpNodes] = useState<HierarchyNode[]>([]);
+  // Nets the local user is invited to but has not yet joined ("Available to Join").
+  // On rpk.chat nets are private_chat, so they never surface via publicRooms;
+  // they arrive as room invites carrying the net priority state event.
+  const [availableNets, setAvailableNets] = useState<HierarchyNode[]>([]);
+
+  // Discord-style sidebar participant display: poll voiceEngine every 500 ms to
+  // build per-net participant and speaker maps for the lounge sidebar.
+  const [voiceParticipants, setVoiceParticipants] = useState<ReadonlyMap<string, readonly string[]>>(new Map());
+  const [activeSpeakers, setActiveSpeakers] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
+
+  // ── Lounge voice connection state ────────────────────────────────────────
+  const [activeVoiceRoomId, setActiveVoiceRoomId] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isMonitorOnly, setIsMonitorOnly] = useState(false);
+  const [isTransmitting, setIsTransmitting] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; roomId: string } | null>(null);
+  const pttRef = useRef<PttController | null>(null);
+  // Prevents concurrent handleVoiceChannelClick / handleVoiceChannelMonitor calls
+  // from racing when the user clicks multiple voice channels in quick succession.
+  const joiningRef = useRef(false);
+
+  // Keep a live ref to focusedAppPtt so the PttController focus-gate closure
+  // reads the current value without stale-closure issues.
+  const focusedAppPttRef = useRef<typeof focusedAppPtt>(focusedAppPtt);
+  focusedAppPttRef.current = focusedAppPtt;
 
   // Refresh the operations list from joined rooms when Matrix state changes.
   useEffect(() => {
@@ -140,6 +169,85 @@ export function Home({
     refresh();
     return subscribeToNetsChanges(client, refresh);
   }, [client]);
+
+  // Refresh the "Available to Join" list: rooms the local user is invited to
+  // (membership === "invite") that carry the net priority state event.
+  useEffect(() => {
+    const refresh = () => {
+      const nodes: HierarchyNode[] = client
+        .getRooms()
+        .filter((r) => r.getMyMembership() === "invite")
+        .filter((r) => r.currentState.getStateEvents(NET_PRIORITY_EVENT, ""))
+        .map((r) => ({
+          id: r.roomId,
+          name: r.name ?? r.roomId,
+          type: "net" as const,
+          children: [],
+        }));
+      setAvailableNets(nodes);
+    };
+    refresh();
+    return subscribeToNetsChanges(client, refresh);
+  }, [client]);
+
+  // Poll voiceEngine every 500 ms to refresh participant/speaker maps used by
+  // the lounge sidebar's Discord-style participant sub-rows.
+  useEffect(() => {
+    if (!voiceEngine) return;
+    const poll = () => {
+      const participants = new Map<string, readonly string[]>();
+      const speakers = new Map<string, ReadonlySet<string>>();
+      for (const node of loungeNodes) {
+        const netId = node.id;
+        const ids = voiceEngine.getConnectedParticipantIds(netId);
+        if (ids.length > 0) {
+          participants.set(netId, ids);
+          speakers.set(netId, new Set(voiceEngine.getActiveSpeakers(netId)));
+        }
+      }
+      setVoiceParticipants(participants);
+      setActiveSpeakers(speakers);
+    };
+    poll();
+    const id = setInterval(poll, 500);
+    return () => clearInterval(id);
+  }, [voiceEngine, loungeNodes]);
+
+  // Create a single PttController for the lounge sidebar's voice controls.
+  // Torn down on voiceEngine change or unmount.
+  useEffect(() => {
+    if (!voiceEngine) return;
+    const ptt = new PttController(voiceEngine);
+    pttRef.current = ptt;
+    ptt.setFocusGateConfig(() => ({
+      enabled: focusedAppPttRef.current?.enabled ?? false,
+      allowlist: focusedAppPttRef.current?.allowlistEntries ?? [],
+    }));
+    return () => {
+      void ptt.shutdown();
+      pttRef.current = null;
+    };
+  }, [voiceEngine]);
+
+  // Poll VoiceEngine every 100 ms to update the RadioBar transmit indicator
+  // and keep onTransmittingChange (used by AppState for window chrome) in sync.
+  useEffect(() => {
+    if (!voiceEngine) return;
+    const id = setInterval(() => {
+      const activePtt = voiceEngine.getActivePttNet();
+      setIsTransmitting(activePtt === activeVoiceRoomId && !isMuted);
+      onTransmittingChange(activePtt);
+    }, 100);
+    return () => clearInterval(id);
+  }, [voiceEngine, activeVoiceRoomId, isMuted, onTransmittingChange]);
+
+  // Dismiss the voice-channel context menu on any mousedown outside it.
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    window.addEventListener("mousedown", handler);
+    return () => window.removeEventListener("mousedown", handler);
+  }, [contextMenu]);
 
   // Build the lounge hierarchy tree (nets + nested channels) whenever the net
   // rooms change. netRooms are sourced the same way NetListPanel sources nets:
@@ -294,6 +402,107 @@ export function Home({
     await onAddToAllowlist(rsiHandle);
   }
 
+  /** Resolve a Matrix user ID to a display name for sidebar participant sub-rows. */
+  function resolveDisplayName(userId: string): string {
+    // Try to find the member in any joined room where we know them
+    for (const room of client.getRooms()) {
+      const member = room.getMember(userId);
+      if (member?.name) return member.name;
+    }
+    return userId.split(":")[0].replace("@", "");
+  }
+
+  async function handleVoiceChannelClick(netRoomId: string): Promise<void> {
+    if (!voiceEngine || joiningRef.current) return;
+    if (activeVoiceRoomId === netRoomId) return;
+    joiningRef.current = true;
+    try {
+      if (activeVoiceRoomId) {
+        await pttRef.current?.unbind(activeVoiceRoomId);
+        await voiceEngine.unmonitorNet(activeVoiceRoomId);
+        setActiveVoiceRoomId(null);
+      }
+      const net = listNets(client).find((n) => n.matrixRoomId === netRoomId);
+      if (!net) return;
+      try {
+        await voiceEngine.monitorNet({ matrixRoomId: netRoomId, priority: net.properties.priority ?? 0 });
+      } catch (err) {
+        console.error("[Home] Failed to join voice channel:", err);
+        return;
+      }
+      const keybind = serverEntry.voicePrefs?.keybinds[netRoomId] ?? null;
+      const pttMode = (serverEntry.voicePrefs?.pttModes[netRoomId] as PttMode | undefined) ?? "toggle";
+      if (keybind && pttRef.current) {
+        await pttRef.current.bind({ matrixRoomId: netRoomId, mode: pttMode, accelerator: keybind });
+      }
+      setActiveVoiceRoomId(netRoomId);
+      setIsMuted(false);
+      setIsMonitorOnly(false);
+    } finally {
+      joiningRef.current = false;
+    }
+  }
+
+  async function handleVoiceChannelMonitor(netRoomId: string): Promise<void> {
+    if (!voiceEngine || joiningRef.current) return;
+    if (activeVoiceRoomId === netRoomId) {
+      await pttRef.current?.unbind(netRoomId);
+      setIsMonitorOnly(true);
+      setIsMuted(false);
+      return;
+    }
+    joiningRef.current = true;
+    try {
+      if (activeVoiceRoomId) {
+        await pttRef.current?.unbind(activeVoiceRoomId);
+        await voiceEngine.unmonitorNet(activeVoiceRoomId);
+        setActiveVoiceRoomId(null);
+      }
+      const net = listNets(client).find((n) => n.matrixRoomId === netRoomId);
+      if (!net) return;
+      try {
+        await voiceEngine.monitorNet({ matrixRoomId: netRoomId, priority: net.properties.priority ?? 0 });
+      } catch (err) {
+        console.error("[Home] Failed to monitor voice channel:", err);
+        return;
+      }
+      setActiveVoiceRoomId(netRoomId);
+      setIsMonitorOnly(true);
+      setIsMuted(false);
+    } finally {
+      joiningRef.current = false;
+    }
+  }
+
+  async function handleVoiceLeave(): Promise<void> {
+    if (!activeVoiceRoomId || !voiceEngine) return;
+    await pttRef.current?.unbind(activeVoiceRoomId);
+    await voiceEngine.unmonitorNet(activeVoiceRoomId);
+    setActiveVoiceRoomId(null);
+    setIsMonitorOnly(false);
+    setIsMuted(false);
+  }
+
+  function handlePttDown(): void {
+    if (!activeVoiceRoomId || !voiceEngine || isMuted || isMonitorOnly) return;
+    void voiceEngine.startPtt(activeVoiceRoomId);
+  }
+
+  function handlePttUp(): void {
+    if (!voiceEngine) return;
+    void voiceEngine.stopPtt();
+  }
+
+  // Values used by RadioBar — computed from active net and stored prefs.
+  const activeNet = activeVoiceRoomId
+    ? listNets(client).find((n) => n.matrixRoomId === activeVoiceRoomId)
+    : null;
+  const radioBarChannelName = activeNet?.properties.name ?? activeVoiceRoomId ?? "";
+  const radioBarFreqTag =
+    activeNet?.properties.priority != null ? `P${activeNet.properties.priority}` : "";
+  const radioBarPttKey =
+    (activeVoiceRoomId ? serverEntry.voicePrefs?.keybinds[activeVoiceRoomId] : null) ?? "–";
+
   /** Resolve the display name for the net the local user is currently sharing to. */
   function resolveNetName(share: LocalShareState | null): string | null {
     if (!share) return null;
@@ -345,13 +554,24 @@ export function Home({
   );
 
   // Decide what the main area renders:
-  //   - A channel is selected (text or voice) → MainPanel via ChannelMainPanel.
-  //       Voice channels forward the netListPanel into the voiceContent slot.
-  //   - Nothing selected → the existing NetListPanel (lounge) or the ops sidebar
-  //       prompt (handled by the sidebar itself), with NetListPanel as a stable
-  //       fallback so voice is always reachable.
+  //   - Lounge mode with a channel selected → ChannelMainPanel (text only, no VoiceChannelView)
+  //   - Ops mode with a channel selected → ChannelMainPanel with VoiceChannelView for voice channels
+  //   - Lounge mode with nothing selected → clean empty state (no center console)
+  //   - Ops mode with nothing selected → NetListPanel fallback for operations voice controls
   let mainArea: React.ReactNode;
-  if (selected) {
+  if (selected && mode === "lounge") {
+    // Lounge: show text channel content only — voice channels no longer navigate
+    mainArea = (
+      <ChannelMainPanel
+        client={client}
+        channel={selected.channel}
+        netName={selected.netName}
+        onSelectChannel={setSelectedChannelId}
+        voiceContent={undefined}
+      />
+    );
+  } else if (selected) {
+    // Ops mode: keep VoiceChannelView for voice channels (unchanged)
     mainArea = (
       <ChannelMainPanel
         client={client}
@@ -359,11 +579,30 @@ export function Home({
         netName={selected.netName}
         onSelectChannel={setSelectedChannelId}
         voiceContent={
-          selected.channel.type === ChannelType.VOICE ? netListPanel : undefined
+          selected.channel.type === ChannelType.VOICE ? (
+            <VoiceChannelView
+              client={client}
+              netId={selected.channel.netId}
+              netName={selected.netName}
+              channelName={selected.channel.name}
+              voiceEngine={voiceEngine}
+              serverEntry={serverEntry}
+              onTransmittingChange={onTransmittingChange}
+              focusedAppPtt={focusedAppPtt}
+            />
+          ) : undefined
         }
       />
     );
+  } else if (mode === "lounge") {
+    // Lounge with nothing selected: clean empty state (no center console)
+    mainArea = (
+      <div className="flex h-full items-center justify-center text-sm text-slate-600">
+        Select a channel to start chatting
+      </div>
+    );
   } else {
+    // Ops mode fallback — keep NetListPanel for operations voice controls
     mainArea = <div className="h-full overflow-auto">{netListPanel}</div>;
   }
 
@@ -433,32 +672,66 @@ export function Home({
         />
 
         {/* Channel sidebar — lounge tree or operation hierarchy */}
-        <div className="w-60 shrink-0 overflow-y-auto border-r border-slate-800 bg-slate-950">
-          {mode === "ops" ? (
-            <OperationsSidebar
-              operation={selectedOperation}
-              nodes={opNodes}
-              selectedChannelId={selectedChannelId}
-              expandedIds={expandedIds}
-              onSelectChannel={setSelectedChannelId}
-              onToggleExpand={handleToggleExpand}
-              onInvite={selectedOperation ? handleOpenInvite : undefined}
-            />
-          ) : (
-            <LoungeSidebar
-              nodes={loungeNodes}
-              availableNets={[]}
-              selectedChannelId={selectedChannelId}
-              expandedIds={expandedIds}
-              onSelectChannel={setSelectedChannelId}
-              onToggleExpand={handleToggleExpand}
-              onJoinNet={(id) => void client.joinRoom(id)}
+        <div className="flex w-60 shrink-0 flex-col border-r border-slate-800 bg-slate-950">
+          <div className="flex-1 overflow-y-auto">
+            {mode === "ops" ? (
+              <OperationsSidebar
+                operation={selectedOperation}
+                nodes={opNodes}
+                selectedChannelId={selectedChannelId}
+                expandedIds={expandedIds}
+                onSelectChannel={setSelectedChannelId}
+                onToggleExpand={handleToggleExpand}
+                onInvite={selectedOperation ? handleOpenInvite : undefined}
+                onCreateOperation={() => setCreatingOp(true)}
+              />
+            ) : (
+              <LoungeSidebar
+                client={client}
+                nodes={loungeNodes}
+                availableNets={availableNets}
+                selectedChannelId={selectedChannelId}
+                expandedIds={expandedIds}
+                onSelectChannel={setSelectedChannelId}
+                onToggleExpand={handleToggleExpand}
+                onJoinNet={(id) => void client.joinRoom(id)}
+                voiceParticipants={voiceParticipants}
+                activeSpeakers={activeSpeakers}
+                localUserId={client.getSafeUserId() ?? undefined}
+                resolveDisplayName={resolveDisplayName}
+                onVoiceChannelClick={(roomId) => void handleVoiceChannelClick(roomId)}
+                onVoiceChannelRightClick={(roomId, x, y) => setContextMenu({ x, y, roomId })}
+                connectedVoiceRoomId={activeVoiceRoomId ?? undefined}
+              />
+            )}
+          </div>
+          {/* RadioBar — rendered below the scrollable sidebar only when connected in lounge mode */}
+          {mode === "lounge" && activeVoiceRoomId && (
+            <RadioBar
+              channelName={radioBarChannelName}
+              freqTag={radioBarFreqTag}
+              pttKey={radioBarPttKey}
+              isTransmitting={isTransmitting}
+              isMuted={isMuted}
+              onDisconnect={() => void handleVoiceLeave()}
+              onToggleMute={() => setIsMuted((m) => !m)}
+              onPttDown={handlePttDown}
+              onPttUp={handlePttUp}
             />
           )}
         </div>
 
         {/* Main area — channel content or the existing net/voice panel */}
         <div className="min-w-0 flex-1 overflow-hidden">{mainArea}</div>
+
+        {/* Roster — joined members of the selected channel's net */}
+        <div className="w-48 shrink-0 border-l border-slate-800 bg-slate-950">
+          <RosterPanel
+            client={client}
+            netId={selected?.channel.netId ?? null}
+            voiceEngine={voiceEngine}
+          />
+        </div>
       </div>
 
       {creating && (
@@ -492,6 +765,60 @@ export function Home({
           onClose={() => setInviteOpen(false)}
           onInvited={() => setInviteOpen(false)}
         />
+      )}
+
+      {/* Voice channel context menu — fixed-position overlay, dismissed on outside click */}
+      {contextMenu && (
+        <div
+          style={{ position: "fixed", top: contextMenu.y, left: contextMenu.x, zIndex: 100 }}
+          className="min-w-[180px] rounded-md border border-slate-700 bg-slate-800 py-1 shadow-xl"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-slate-500">
+            {listNets(client).find((n) => n.matrixRoomId === contextMenu.roomId)?.properties.name ??
+              contextMenu.roomId}
+          </div>
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm text-slate-300 hover:bg-brand-500/20 hover:text-brand-50"
+            onClick={() => {
+              void handleVoiceChannelClick(contextMenu.roomId);
+              setContextMenu(null);
+            }}
+          >
+            📻 Join Channel
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm text-slate-300 hover:bg-brand-500/20 hover:text-brand-50"
+            onClick={() => {
+              void handleVoiceChannelMonitor(contextMenu.roomId);
+              setContextMenu(null);
+            }}
+          >
+            👂 Monitor (listen-only)
+          </button>
+          <div className="my-1 border-t border-slate-700" />
+          <div className="px-3 py-1.5 text-sm text-slate-500">
+            ⌨️ PTT:{" "}
+            <kbd className="rounded border border-slate-700 bg-slate-900 px-1 font-mono text-[10px] text-slate-400">
+              {serverEntry.voicePrefs?.keybinds[contextMenu.roomId] ?? "Not set"}
+            </kbd>
+          </div>
+          <div className="my-1 border-t border-slate-700" />
+          {activeVoiceRoomId === contextMenu.roomId ? (
+            <button
+              type="button"
+              className="w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-red-500/20 hover:text-red-300"
+              onClick={() => {
+                void handleVoiceLeave();
+                setContextMenu(null);
+              }}
+            >
+              ↩ Leave Channel
+            </button>
+          ) : null}
+        </div>
       )}
     </div>
   );
