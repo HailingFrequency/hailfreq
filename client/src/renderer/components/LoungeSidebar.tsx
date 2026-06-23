@@ -24,6 +24,12 @@ export interface LoungeSidebarProps {
   localUserId?: string;
   /** Display name resolver for participant sub-rows */
   resolveDisplayName?: (userId: string) => string;
+  /** Called when a voice channel is left-clicked — passed through to ChannelList. */
+  onVoiceChannelClick?: (netRoomId: string) => void;
+  /** Called when a voice channel is right-clicked — passed through to ChannelList. */
+  onVoiceChannelRightClick?: (netRoomId: string, x: number, y: number) => void;
+  /** Net room ID of the currently connected channel — passed through to ChannelList. */
+  connectedVoiceRoomId?: string;
 }
 
 /** Depth-first search for a node by id across the hierarchy. */
@@ -61,6 +67,9 @@ export function LoungeSidebar({
   activeSpeakers,
   localUserId,
   resolveDisplayName,
+  onVoiceChannelClick,
+  onVoiceChannelRightClick,
+  connectedVoiceRoomId,
 }: LoungeSidebarProps) {
   const [addingChannelToNet, setAddingChannelToNet] = useState<string | null>(null);
 
@@ -90,6 +99,9 @@ export function LoungeSidebar({
             activeSpeakers={activeSpeakers}
             localUserId={localUserId}
             resolveDisplayName={resolveDisplayName}
+            onVoiceChannelClick={onVoiceChannelClick}
+            onVoiceChannelRightClick={onVoiceChannelRightClick}
+            connectedVoiceRoomId={connectedVoiceRoomId}
           />
         </section>
       )}
@@ -109,6 +121,9 @@ export function LoungeSidebar({
             activeSpeakers={activeSpeakers}
             localUserId={localUserId}
             resolveDisplayName={resolveDisplayName}
+            onVoiceChannelClick={onVoiceChannelClick}
+            onVoiceChannelRightClick={onVoiceChannelRightClick}
+            connectedVoiceRoomId={connectedVoiceRoomId}
           />
         </section>
       )}
