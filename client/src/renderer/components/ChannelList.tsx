@@ -28,6 +28,12 @@ export interface ChannelListProps {
   localUserId?: string;
   /** Display name resolver: matrixUserId → human-readable name. */
   resolveDisplayName?: (userId: string) => string;
+  /** Called when user left-clicks a voice channel — joins immediately. Net room ID passed (node.netId ?? node.id). */
+  onVoiceChannelClick?: (netRoomId: string) => void;
+  /** Called when user right-clicks a voice channel. Passes net room ID + pointer position for context menu. */
+  onVoiceChannelRightClick?: (netRoomId: string, x: number, y: number) => void;
+  /** Net room ID of the currently connected channel — used to style the connected row. */
+  connectedVoiceRoomId?: string;
   /** Indentation depth — incremented on each recursive call. Defaults to 0. */
   depth?: number;
 }
@@ -48,6 +54,9 @@ interface ChannelListRowProps {
   activeSpeakers?: ReadonlyMap<string, ReadonlySet<string>>;
   localUserId?: string;
   resolveDisplayName?: (userId: string) => string;
+  onVoiceChannelClick?: (netRoomId: string) => void;
+  onVoiceChannelRightClick?: (netRoomId: string, x: number, y: number) => void;
+  connectedVoiceRoomId?: string;
   depth: number;
 }
 
@@ -62,6 +71,9 @@ function ChannelListRow({
   activeSpeakers,
   localUserId,
   resolveDisplayName,
+  onVoiceChannelClick,
+  onVoiceChannelRightClick,
+  connectedVoiceRoomId,
   depth,
 }: ChannelListRowProps) {
   const hasChildren = node.children.length > 0;
@@ -69,6 +81,17 @@ function ChannelListRow({
   const isSelected = selectedChannelId === node.id;
   const selectable = isSelectableNode(node);
   const icon = nodeIcon(node);
+
+  // The net room ID for voice nodes (parent Space ID for child voice channels,
+  // or the node's own ID for backwards-compat private_chat nets).
+  const voiceNetId = node.type === "voice" ? (node.netId ?? node.id) : null;
+  const isConnected = voiceNetId !== null && voiceNetId === connectedVoiceRoomId;
+
+  function handleVoiceContextMenu(e: React.MouseEvent) {
+    if (!voiceNetId || !onVoiceChannelRightClick) return;
+    e.preventDefault();
+    onVoiceChannelRightClick(voiceNetId, e.clientX, e.clientY);
+  }
 
   // "+ Channel" affordance: only for net/ship structural nodes, and only when
   // the caller wired up an onAddChannel handler.
@@ -79,13 +102,17 @@ function ChannelListRow({
   const paddingLeft = 12 + depth * 16;
 
   function handleRowClick() {
+    if (node.type === "voice" && onVoiceChannelClick && voiceNetId) {
+      onVoiceChannelClick(voiceNetId);
+      return;
+    }
     if (selectable) {
       onSelectChannel(node.id);
     } else {
       onToggleExpand(node.id);
-      // Discord-like: when expanding a net/ship, auto-select its voice child
-      // so the user lands on the voice channel immediately without a second click.
-      if (!isExpanded && node.children.length > 0) {
+      // Auto-select the voice child only when NOT in click-to-join mode
+      // (i.e., when onVoiceChannelClick is not provided — Operations mode).
+      if (!onVoiceChannelClick && !isExpanded && node.children.length > 0) {
         const voiceChild = node.children.find((c) => c.type === "voice");
         if (voiceChild) onSelectChannel(voiceChild.id);
       }
@@ -142,9 +169,12 @@ function ChannelListRow({
             "flex flex-1 items-center gap-1.5 rounded py-1 text-left text-sm transition-colors min-w-0",
             isSelected
               ? "bg-brand-500/20 text-brand-50"
+              : isConnected
+              ? "border border-brand-500/30 bg-brand-500/10 text-brand-50"
               : "text-slate-300 hover:bg-slate-800 hover:text-slate-100",
           ].join(" ")}
           onClick={handleRowClick}
+          onContextMenu={handleVoiceContextMenu}
           tabIndex={0}
           aria-selected={selectable ? isSelected : undefined}
         >
@@ -159,6 +189,14 @@ function ChannelListRow({
           <span className="truncate flex-1 font-medium">
             {node.name}
           </span>
+
+          {/* Live dot — shown while connected to this voice channel */}
+          {isConnected && (
+            <span
+              className="shrink-0 h-2 w-2 animate-pulse rounded-full bg-brand-400"
+              aria-label="Connected"
+            />
+          )}
 
           {/* Priority badge — only shown for broadcast nodes */}
           {node.isBroadcast && node.priority !== undefined && (
@@ -198,6 +236,9 @@ function ChannelListRow({
           activeSpeakers={activeSpeakers}
           localUserId={localUserId}
           resolveDisplayName={resolveDisplayName}
+          onVoiceChannelClick={onVoiceChannelClick}
+          onVoiceChannelRightClick={onVoiceChannelRightClick}
+          connectedVoiceRoomId={connectedVoiceRoomId}
           depth={depth + 1}
         />
       )}
@@ -266,6 +307,9 @@ export function ChannelList({
   activeSpeakers,
   localUserId,
   resolveDisplayName,
+  onVoiceChannelClick,
+  onVoiceChannelRightClick,
+  connectedVoiceRoomId,
   depth = 0,
 }: ChannelListProps) {
   const listRole = depth === 0 ? "tree" : "group";
@@ -285,6 +329,9 @@ export function ChannelList({
           activeSpeakers={activeSpeakers}
           localUserId={localUserId}
           resolveDisplayName={resolveDisplayName}
+          onVoiceChannelClick={onVoiceChannelClick}
+          onVoiceChannelRightClick={onVoiceChannelRightClick}
+          connectedVoiceRoomId={connectedVoiceRoomId}
           depth={depth}
         />
       ))}
