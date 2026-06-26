@@ -29,7 +29,7 @@
     "react": "^19.2.7"
   },
   "devDependencies": {
-    "@electron/fuses": "^1.8.0",
+    "@electron/fuses": "^2.1.2",
     "@playwright/test": "^1.49.0",
     "@types/node": "^25.9.1",
     "@types/qrcode": "^1.5.6",
